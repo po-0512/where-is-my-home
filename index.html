@@ -1,0 +1,1484 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>租屋查找器</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   MORANDI PALETTE
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+:root {
+  /* Base surfaces */
+  --bg:          #EEE9E2;   /* warm parchment */
+  --panel:       #E4DDD5;   /* panel surface */
+  --card:        #EBE6DF;   /* card surface */
+  --card-h:      #E2DAD1;   /* card hover */
+  --card-active: #D9D1C7;   /* card selected */
+
+  /* Borders */
+  --b0:  rgba(80,65,50,0.07);
+  --b1:  rgba(80,65,50,0.13);
+  --b2:  rgba(80,65,50,0.22);
+
+  /* Text */
+  --t1:  #3A3228;   /* primary */
+  --t2:  #6B6058;   /* secondary */
+  --t3:  #9C9088;   /* muted */
+  --t4:  #C4B8AE;   /* very muted */
+
+  /* Accents — Morandi ramps */
+  --sage:      #7B8C7A;   /* sage green */
+  --sage-dim:  #C6D1C5;
+  --sage-pale: #E6EDE6;
+  --fog:       #7A8CA0;   /* fog blue */
+  --fog-dim:   #C0CCDA;
+  --fog-pale:  #E4EAF2;
+  --terra:     #A87060;   /* terracotta */
+  --terra-dim: #D9B8AE;
+  --terra-pale:#F2E6E0;
+  --rose:      #B08090;   /* dusty rose */
+  --rose-dim:  #D8BDC7;
+  --rose-pale: #F0E6EA;
+  --wheat:     #B09870;   /* warm wheat */
+  --wheat-dim: #D8C8A8;
+  --wheat-pale:#F5EEE0;
+
+  /* Functional */
+  --ok:   #6B8C72;
+  --warn: #A0825A;
+  --err:  #A06060;
+
+  --sans: 'Noto Sans TC', sans-serif;
+  --mono: 'DM Mono', monospace;
+  --r:    10px;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   RESET & BASE
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0 }
+html,body { height:100%; overflow:hidden; background:var(--bg); color:var(--t1); font-family:var(--sans); font-size:14px }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   DESKTOP HEADER
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.desk-header {
+  height:54px; background:var(--panel); border-bottom:1px solid var(--b1);
+  display:flex; align-items:center; padding:0 20px; gap:14px;
+  position:sticky; top:0; z-index:300;
+}
+.logo { font-size:15px; font-weight:700; color:var(--t1); white-space:nowrap; letter-spacing:.02em }
+.logo em { color:var(--sage); font-style:normal }
+
+.h-search {
+  flex:1; max-width:320px; display:flex; align-items:center;
+  background:var(--bg); border:1px solid var(--b1); border-radius:var(--r);
+  padding:0 12px; gap:8px; transition:border-color .2s;
+}
+.h-search:focus-within { border-color:var(--sage) }
+.h-search input { background:transparent; border:none; outline:none; color:var(--t1); font-family:var(--sans); font-size:13px; width:100%; padding:8px 0 }
+.h-search input::placeholder { color:var(--t3) }
+
+.h-right { display:flex; align-items:center; gap:10px; margin-left:auto }
+.h-stat { font-family:var(--mono); font-size:11px; color:var(--t3) }
+.h-stat b { color:var(--sage); font-weight:500 }
+
+.btn-add {
+  background:var(--sage); border:none; color:#fff;
+  border-radius:var(--r); padding:8px 16px; font-size:13px; font-weight:700;
+  cursor:pointer; font-family:var(--sans); display:flex; align-items:center;
+  gap:6px; transition:opacity .15s; white-space:nowrap; flex-shrink:0; letter-spacing:.02em;
+}
+.btn-add:hover { opacity:.85 }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   MOBILE HEADER
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.mob-header {
+  display:none; background:var(--panel); border-bottom:1px solid var(--b1);
+  padding:10px 14px; flex-direction:column; gap:8px;
+  position:sticky; top:0; z-index:300;
+}
+.mob-row1 { display:flex; align-items:center; gap:8px }
+.mob-logo { font-size:14px; font-weight:700; color:var(--t1) }
+.mob-logo em { color:var(--sage); font-style:normal }
+.mob-search {
+  flex:1; display:flex; align-items:center; background:var(--bg);
+  border:1px solid var(--b1); border-radius:var(--r); padding:0 10px; gap:6px;
+}
+.mob-search:focus-within { border-color:var(--sage) }
+.mob-search input { background:transparent; border:none; outline:none; color:var(--t1); font-family:var(--sans); font-size:13px; width:100%; padding:7px 0 }
+.mob-search input::placeholder { color:var(--t3) }
+.mob-add {
+  background:var(--sage); border:none; color:#fff; border-radius:var(--r);
+  padding:8px 12px; font-size:13px; font-weight:700; cursor:pointer; font-family:var(--sans); white-space:nowrap;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   MOBILE TABS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.mob-tabs { display:none; background:var(--panel); border-bottom:1px solid var(--b1) }
+.mob-tab {
+  background:transparent; border:none; border-bottom:2px solid transparent;
+  color:var(--t3); font-size:13px; font-family:var(--sans); font-weight:500;
+  padding:10px 22px; cursor:pointer; transition:all .2s;
+}
+.mob-tab.on { color:var(--sage); border-bottom-color:var(--sage) }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   LAYOUT
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.main { display:flex; height:calc(100vh - 54px); overflow:hidden }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   LEFT PANEL
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.left {
+  width:43%; min-width:340px; display:flex; flex-direction:column;
+  border-right:1px solid var(--b1); overflow:hidden; background:var(--panel);
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   FILTER PANEL
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.filter-panel {
+  background:var(--panel); border-bottom:1px solid var(--b1);
+  flex-shrink:0; overflow:hidden;
+}
+
+.filter-header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:10px 14px 8px; gap:8px; cursor:pointer; user-select:none;
+}
+.filter-header-left { display:flex; align-items:center; gap:8px }
+.filter-header-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--t2) }
+.filter-tags { display:flex; gap:4px; flex-wrap:nowrap; overflow:hidden; max-width:200px }
+.ftag {
+  background:var(--sage-pale); border:1px solid var(--sage-dim); color:var(--sage);
+  border-radius:20px; padding:2px 8px; font-size:10px; white-space:nowrap; font-weight:500;
+}
+.ftag.terra { background:var(--terra-pale); border-color:var(--terra-dim); color:var(--terra) }
+.filter-toggle-icon { color:var(--t3); font-size:12px; transition:transform .2s; flex-shrink:0 }
+.filter-toggle-icon.open { transform:rotate(180deg) }
+
+.filter-body { padding:0 14px 12px; display:flex; flex-direction:column; gap:10px }
+
+/* section title inside filter */
+.fsec-title {
+  font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--t3); margin-bottom:5px;
+}
+
+/* district grid */
+.district-grid {
+  display:flex; flex-wrap:wrap; gap:5px;
+}
+.dchip {
+  padding:4px 10px; border-radius:20px; border:1px solid var(--b1);
+  font-size:11px; cursor:pointer; background:var(--bg); color:var(--t2);
+  transition:all .15s; font-family:var(--sans); font-weight:400;
+  white-space:nowrap;
+}
+.dchip:hover { border-color:var(--fog-dim); color:var(--fog) }
+.dchip.on { background:var(--fog); border-color:var(--fog); color:#fff; font-weight:500 }
+
+.district-actions { display:flex; gap:6px; margin-top:4px }
+.btn-district-all, .btn-district-clear {
+  background:transparent; border:1px solid var(--b1); color:var(--t3);
+  border-radius:6px; padding:3px 10px; font-size:10px; cursor:pointer;
+  font-family:var(--sans); transition:all .15s;
+}
+.btn-district-all:hover { border-color:var(--fog); color:var(--fog) }
+.btn-district-clear:hover { border-color:var(--terra); color:var(--terra) }
+
+/* price row */
+.price-row { display:flex; align-items:center; gap:7px }
+.pi {
+  background:var(--bg); border:1px solid var(--b1); color:var(--t1);
+  border-radius:8px; padding:6px 10px; font-size:12px; font-family:var(--mono);
+  outline:none; transition:border-color .2s; width:96px;
+}
+.pi:focus { border-color:var(--sage) }
+.pi::placeholder { color:var(--t4) }
+
+/* type chips */
+.type-chips { display:flex; gap:5px; flex-wrap:wrap }
+.tchip {
+  padding:4px 12px; border-radius:20px; border:1px solid var(--b1);
+  font-size:11px; cursor:pointer; background:var(--bg); color:var(--t2);
+  transition:all .15s; font-family:var(--sans);
+}
+.tchip:hover { border-color:var(--sage-dim); color:var(--sage) }
+.tchip.on { background:var(--sage); border-color:var(--sage); color:#fff; font-weight:500 }
+
+/* toggles */
+.toggle-row { display:flex; gap:14px; flex-wrap:wrap }
+.ti { display:flex; align-items:center; gap:6px; cursor:pointer }
+.ti input { display:none }
+.tpill { width:30px; height:17px; background:var(--b2); border-radius:10px; position:relative; transition:background .2s; flex-shrink:0 }
+.tpill::after { content:''; position:absolute; left:2px; top:2px; width:13px; height:13px; background:#fff; border-radius:50%; transition:left .2s; box-shadow:0 1px 2px rgba(0,0,0,.15) }
+.ti input:checked + .tpill { background:var(--sage) }
+.ti input:checked + .tpill::after { left:15px }
+.ti span:last-child { font-size:12px; color:var(--t3) }
+.ti input:checked ~ span:last-child { color:var(--t1) }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   REFERENCE LOCATIONS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.ref-section {
+  background:var(--panel); border-bottom:1px solid var(--b1);
+  padding:10px 14px; flex-shrink:0;
+}
+.ref-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px }
+.ref-title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--t3) }
+.btn-add-ref {
+  background:transparent; border:1px solid var(--sage-dim); color:var(--sage);
+  border-radius:6px; padding:3px 10px; font-size:11px; cursor:pointer;
+  transition:all .15s; font-family:var(--sans);
+}
+.btn-add-ref:hover { background:var(--sage-pale) }
+
+.ref-list { display:flex; flex-direction:column; gap:6px; margin-bottom:8px }
+.ref-item {
+  display:flex; align-items:center; gap:7px;
+  background:var(--bg); border:1px solid var(--b0); border-radius:8px; padding:7px 10px;
+}
+.ref-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0 }
+.ref-name-in { background:transparent; border:none; outline:none; color:var(--t1); font-family:var(--sans); font-size:12px; font-weight:500; width:54px; flex-shrink:0 }
+.ref-addr-in {
+  background:transparent; border:1px solid transparent; color:var(--t2);
+  border-radius:6px; padding:3px 7px; font-size:11px; font-family:var(--sans);
+  outline:none; flex:1; min-width:0; transition:all .2s;
+}
+.ref-addr-in:focus { background:var(--bg); border-color:var(--terra); color:var(--t1) }
+.ref-addr-in::placeholder { color:var(--t4) }
+.ref-ok { font-size:10px; color:var(--ok); font-family:var(--mono); white-space:nowrap; font-weight:500 }
+.ref-wait { font-size:10px; color:var(--warn); font-family:var(--mono); white-space:nowrap; cursor:help }
+.addr-group {
+  display:flex; gap:8px; align-items:stretch;
+}
+.addr-group .f-in { flex:1; min-width:0 }
+.btn-verify-addr {
+  background:var(--terra-pale); border:1px solid var(--terra-dim); color:var(--terra);
+  border-radius:var(--r); padding:10px 14px; font-size:13px; font-weight:600;
+  cursor:pointer; font-family:var(--sans); white-space:nowrap; flex-shrink:0;
+  transition:all .15s; display:flex; align-items:center; gap:5px;
+}
+.btn-verify-addr:hover { background:var(--terra-dim); color:#fff }
+.btn-verify-addr:disabled { opacity:.5; cursor:wait }
+.btn-verify-addr.ok { background:var(--sage-pale); border-color:var(--sage-dim); color:var(--sage) }
+.f-addr-hint { font-size:11px; margin-top:4px; display:flex; align-items:center; gap:4px }
+.f-addr-hint.ok   { color:var(--ok) }
+.f-addr-hint.warn { color:var(--warn) }
+.btn-geo-ref {
+  background:var(--bg); border:1px solid var(--b1); color:var(--t2);
+  border-radius:6px; padding:4px 8px; font-size:13px; cursor:pointer;
+  transition:all .15s; flex-shrink:0; line-height:1;
+  min-width:36px; text-align:center;
+}
+.btn-geo-ref:hover { border-color:var(--terra); background:var(--terra-pale) }
+.btn-geo-ref:disabled { opacity:.5; cursor:wait }
+.btn-geo-ref.geocoded { background:var(--sage-pale); border-color:var(--sage-dim); color:var(--sage); font-size:12px; font-weight:700 }
+.btn-del-ref { background:transparent; border:none; color:var(--t4); font-size:16px; cursor:pointer; padding:0 2px; line-height:1; transition:color .15s }
+.btn-del-ref:hover { color:var(--err) }
+
+.mode-row { display:flex; align-items:center; gap:7px }
+.mode-label { font-size:10px; color:var(--t3); font-weight:700; text-transform:uppercase; letter-spacing:.06em }
+.mchip {
+  padding:4px 11px; border-radius:20px; border:1px solid var(--b1);
+  font-size:11px; cursor:pointer; background:var(--bg); color:var(--t2);
+  transition:all .15s; font-family:var(--sans);
+}
+.mchip:hover { border-color:var(--fog-dim); color:var(--fog) }
+.mchip.on { background:var(--fog); border-color:var(--fog); color:#fff; font-weight:500 }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   SORT + RESULT BAR
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.bar {
+  display:flex; align-items:center; gap:8px; padding:8px 14px;
+  background:var(--panel); border-bottom:1px solid var(--b0); flex-shrink:0;
+}
+.sort-sel {
+  background:var(--bg); border:1px solid var(--b1); color:var(--t2);
+  border-radius:8px; padding:5px 10px; font-size:12px; outline:none;
+  font-family:var(--sans); cursor:pointer; transition:border-color .2s; flex:1;
+}
+.sort-sel:focus { border-color:var(--sage) }
+.rcount { font-family:var(--mono); font-size:11px; color:var(--t3); white-space:nowrap }
+.rcount b { color:var(--sage); font-weight:500 }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   CARD LIST
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.list-wrap {
+  flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:10px;
+  scrollbar-width:thin; scrollbar-color:var(--b1) transparent;
+}
+.list-wrap::-webkit-scrollbar { width:4px }
+.list-wrap::-webkit-scrollbar-thumb { background:var(--b1); border-radius:4px }
+
+.empty {
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  height:100%; gap:10px; color:var(--t3); text-align:center; padding:24px;
+}
+.empty-icon { font-size:42px; opacity:.4 }
+.empty-title { font-size:15px; font-weight:500; color:var(--t2) }
+.empty-sub { font-size:12px; line-height:1.6 }
+.empty-cta {
+  background:var(--sage); border:none; color:#fff; border-radius:var(--r);
+  padding:10px 22px; font-size:13px; font-weight:700; cursor:pointer;
+  font-family:var(--sans); margin-top:6px; transition:opacity .15s; letter-spacing:.02em;
+}
+.empty-cta:hover { opacity:.85 }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   CARD — Horizontal 4:3
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.card {
+  background:var(--card); border:1px solid var(--b0); border-radius:12px;
+  cursor:pointer; overflow:hidden; display:flex; flex-direction:row; align-items:stretch;
+  transition:border-color .2s, box-shadow .2s, transform .15s;
+  animation:up .2s ease both;
+}
+@keyframes up { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+.card:hover { border-color:var(--b2); box-shadow:0 4px 14px rgba(80,65,50,.09); transform:translateY(-1px) }
+.card.active { border-color:var(--sage); box-shadow:0 0 0 1px var(--sage), 0 4px 16px rgba(123,140,122,.14) }
+
+/* ── 4:3 image (left) ── */
+.card-img {
+  width:148px; flex-shrink:0;
+  aspect-ratio:4/3;
+  background:var(--panel); position:relative; overflow:hidden;
+  display:flex; align-items:center; justify-content:center;
+  border-right:1px solid var(--b0);
+}
+.card-img img { width:100%; height:100%; object-fit:cover; display:block }
+.card-img-placeholder {
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:5px; color:var(--t4); padding:8px; text-align:center; width:100%; height:100%;
+}
+.card-img-placeholder svg { opacity:.35 }
+.card-img-placeholder span { font-size:10px; font-family:var(--mono); line-height:1.4 }
+.card-img-source {
+  position:absolute; bottom:5px; left:5px;
+  background:rgba(58,50,40,.7); color:rgba(255,255,255,.9);
+  border-radius:4px; padding:1px 6px; font-size:9px; font-family:var(--mono);
+}
+.card-img-type {
+  position:absolute; top:5px; left:5px;
+  background:rgba(255,255,255,.9); color:var(--t2);
+  border-radius:4px; padding:1px 6px; font-size:9px; font-weight:600;
+}
+.card-img.manual-src { background:var(--sage-pale) }
+.card-img.manual-src .card-img-source { background:rgba(123,140,122,.8) }
+
+/* ── card body (right) ── */
+.card-body {
+  flex:1; padding:10px 12px;
+  display:flex; flex-direction:column; gap:4px;
+  min-width:0; overflow:hidden;
+}
+.card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:6px }
+.card-title {
+  font-size:12px; font-weight:600; color:var(--t1); line-height:1.45; flex:1;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+}
+.manual-pill {
+  background:var(--sage-pale); border:1px solid var(--sage-dim); color:var(--sage);
+  font-size:9px; font-weight:700; padding:1px 6px; border-radius:20px;
+  font-family:var(--mono); white-space:nowrap; flex-shrink:0;
+}
+.card-price-row { display:flex; align-items:baseline; gap:4px }
+.price { font-family:var(--mono); font-size:17px; font-weight:700; color:var(--terra); line-height:1 }
+.price-unit { font-size:10px; color:var(--t3) }
+.no-price { font-size:12px; color:var(--t3); font-style:italic }
+.card-tags { display:flex; gap:4px; flex-wrap:wrap }
+.tag { padding:2px 6px; border-radius:4px; font-size:10px; font-weight:500 }
+.tag-type  { background:var(--fog-pale);   color:var(--fog);   border:1px solid var(--fog-dim) }
+.tag-sub   { background:var(--sage-pale);  color:var(--sage);  border:1px solid var(--sage-dim) }
+.tag-neu   { background:var(--bg);         color:var(--t2);    border:1px solid var(--b1) }
+.tag-warn  { background:var(--terra-pale); color:var(--terra); border:1px solid var(--terra-dim) }
+.util-row  { display:flex; gap:8px; flex-wrap:wrap }
+.util-chip { font-size:10px; color:var(--t3); display:flex; align-items:center; gap:2px }
+.util-chip b { color:var(--t2); font-weight:500 }
+/* commute */
+.commute {
+  background:var(--fog-pale); border:1px solid var(--fog-dim);
+  border-radius:6px; padding:6px 8px;
+}
+.crow { display:flex; align-items:center; gap:5px; margin-bottom:2px }
+.crow:last-child { margin-bottom:0 }
+.cdot { width:6px; height:6px; border-radius:50%; flex-shrink:0 }
+.clabel { font-size:10px; color:var(--t3); width:40px; flex-shrink:0 }
+.ckm { font-size:12px; font-weight:600; font-family:var(--mono); color:var(--t1); min-width:44px }
+.ctime { font-size:10px; color:var(--t2); font-family:var(--mono) }
+
+/* info rows */
+.info-row { display:flex; align-items:flex-start; gap:5px; font-size:11px; color:var(--t2); line-height:1.45 }
+.info-row svg { flex-shrink:0; margin-top:1px; opacity:.5 }
+.card-note { font-size:10px; color:var(--t2); line-height:1.5; padding:4px 7px; background:var(--panel); border-left:2px solid var(--b2); border-radius:0 5px 5px 0; font-style:italic;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden }
+
+/* footer */
+.card-foot { display:flex; align-items:center; justify-content:space-between; padding-top:6px; border-top:1px solid var(--b0); gap:6px; margin-top:auto }
+.card-ts { font-size:10px; color:var(--t4); font-family:var(--mono) }
+.card-actions { display:flex; gap:5px }
+.del-confirm {
+  display:none; align-items:center; gap:6px;
+  background:var(--terra-pale); border:1px solid var(--terra-dim);
+  border-radius:8px; padding:5px 10px; font-size:12px; color:var(--terra);
+}
+.del-confirm.show { display:flex }
+.del-confirm span { white-space:nowrap }
+.btn-del-yes { background:var(--terra); border:none; color:#fff; border-radius:6px; padding:4px 10px; font-size:11px; font-weight:700; cursor:pointer; font-family:var(--sans) }
+.btn-del-no  { background:transparent; border:1px solid var(--terra-dim); color:var(--terra); border-radius:6px; padding:4px 8px; font-size:11px; cursor:pointer; font-family:var(--sans) }
+.btn-sm { background:transparent; border:1px solid var(--b1); color:var(--t3); border-radius:7px; padding:5px 11px; font-size:11px; cursor:pointer; font-family:var(--sans); transition:all .15s }
+.btn-sm:hover { border-color:var(--fog); color:var(--fog) }
+.btn-sm.del:hover { border-color:var(--err); color:var(--err) }
+.btn-link {
+  background:var(--sage); color:#fff; border:none; border-radius:7px;
+  padding:5px 11px; font-size:11px; font-weight:600; font-family:var(--sans);
+  cursor:pointer; text-decoration:none; display:flex; align-items:center; gap:4px;
+  transition:opacity .15s;
+}
+.btn-link:hover { opacity:.85 }
+.unlocated-warn { font-size:10px; color:var(--warn) }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   MAP
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.right { flex:1; position:relative; overflow:hidden }
+#map { width:100%; height:100%; z-index:1 }
+
+.map-legend {
+  position:absolute; bottom:20px; right:12px; z-index:1000;
+  background:rgba(238,233,226,.92); border:1px solid var(--b1);
+  border-radius:var(--r); padding:10px 13px; backdrop-filter:blur(6px);
+}
+.ml-title { font-size:10px; color:var(--t3); font-family:var(--mono); margin-bottom:7px; letter-spacing:.05em }
+.ml-item { display:flex; align-items:center; gap:7px; font-size:11px; color:var(--t2); margin-bottom:3px }
+.ml-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0 }
+
+.geo-bar {
+  position:absolute; bottom:12px; left:12px; z-index:1000;
+  background:rgba(238,233,226,.92); border:1px solid var(--b1);
+  border-radius:8px; padding:6px 12px; font-size:11px; font-family:var(--mono);
+  color:var(--t2); backdrop-filter:blur(6px); display:none;
+}
+.geo-bar.on { display:block }
+.map-pick-banner {
+  position:absolute; top:12px; left:50%; transform:translateX(-50%);
+  z-index:1000; background:var(--fog); color:#fff;
+  border-radius:20px; padding:8px 18px; font-size:13px; font-weight:600;
+  font-family:var(--sans); display:none; align-items:center; gap:8px;
+  box-shadow:0 4px 16px rgba(0,0,0,.2); white-space:nowrap;
+}
+.map-pick-banner.on { display:flex }
+.btn-cancel-pick {
+  background:rgba(255,255,255,.25); border:none; color:#fff;
+  border-radius:12px; padding:2px 10px; font-size:12px; cursor:pointer;
+}
+.btn-map-pick {
+  background:var(--fog-pale); border:1px solid var(--fog-dim); color:var(--fog);
+  border-radius:var(--r); padding:10px 14px; font-size:13px; font-weight:600;
+  cursor:pointer; font-family:var(--sans); white-space:nowrap; flex-shrink:0;
+  transition:all .15s; display:flex; align-items:center; gap:5px;
+}
+.btn-map-pick:hover { background:var(--fog-dim); color:#fff }
+.geo-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--sage); margin-right:6px; animation:pulse 1s infinite }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.2} }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   MODAL
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.modal-bg {
+  position:fixed; inset:0; background:rgba(58,50,40,.5); z-index:500;
+  display:flex; align-items:flex-end; justify-content:center;
+  opacity:0; pointer-events:none; transition:opacity .25s; padding:0;
+}
+.modal-bg.on { opacity:1; pointer-events:all }
+
+.modal {
+  background:var(--panel); border-top:1px solid var(--b1);
+  border-radius:20px 20px 0 0; width:100%; max-width:580px; max-height:93vh;
+  overflow-y:auto; padding:20px 22px 40px;
+  transform:translateY(100%); transition:transform .3s cubic-bezier(.4,0,.2,1);
+  scrollbar-width:thin; scrollbar-color:var(--b1) transparent;
+}
+.modal-bg.on .modal { transform:translateY(0) }
+
+@media (min-width:769px) {
+  .modal-bg { align-items:center; padding:20px }
+  .modal { border-radius:16px; border:1px solid var(--b1); transform:translateY(12px) scale(.98); transition:transform .2s,opacity .2s }
+  .modal-bg.on .modal { transform:translateY(0) scale(1) }
+}
+
+.modal-drag { width:36px; height:4px; background:var(--b2); border-radius:2px; margin:0 auto 16px }
+.modal-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px }
+.modal-title { font-size:17px; font-weight:700; color:var(--t1) }
+.modal-title em { color:var(--sage); font-style:normal }
+.btn-close { background:var(--bg); border:none; color:var(--t3); width:30px; height:30px; border-radius:50%; font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:color .15s }
+.btn-close:hover { color:var(--t1) }
+
+/* form */
+.f-sec { margin-bottom:20px }
+.f-sec-title { font-size:10px; color:var(--t3); font-weight:700; text-transform:uppercase; letter-spacing:.08em; margin-bottom:10px; padding-bottom:6px; border-bottom:1px solid var(--b0) }
+.f-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px }
+.f-full { grid-column:span 2 }
+.f-grp { display:flex; flex-direction:column; gap:5px }
+.f-lbl { font-size:12px; color:var(--t2); font-weight:500; display:flex; align-items:center; gap:4px }
+.req { color:var(--sage); font-size:11px }
+.opt { color:var(--t4); font-size:10px }
+.f-in {
+  background:var(--bg); border:1px solid var(--b1); color:var(--t1);
+  border-radius:var(--r); padding:10px 12px; font-size:14px; font-family:var(--sans);
+  outline:none; transition:border-color .2s; width:100%;
+}
+.f-in:focus { border-color:var(--sage) }
+.f-in.err { border-color:var(--err) }
+.f-in::placeholder { color:var(--t4) }
+.f-err { font-size:11px; color:var(--err); display:none }
+.f-err.on { display:block }
+.f-sel { background:var(--bg); border:1px solid var(--b1); color:var(--t1); border-radius:var(--r); padding:10px 12px; font-size:14px; font-family:var(--sans); outline:none; cursor:pointer; width:100% }
+.f-sel:focus { border-color:var(--sage) }
+
+.tog-grid { display:flex; gap:12px; flex-wrap:wrap }
+.tog { display:flex; align-items:center; gap:7px; cursor:pointer }
+.tog input { display:none }
+.tog .tpill { background:var(--b2) }
+.tog input:checked + .tpill { background:var(--sage) }
+.tog span:last-child { font-size:13px; color:var(--t3) }
+.tog input:checked ~ span:last-child { color:var(--t1) }
+
+.modal-foot { display:flex; gap:10px; padding-top:16px; border-top:1px solid var(--b0); margin-top:8px; justify-content:flex-end }
+.btn-cancel { background:transparent; border:1px solid var(--b1); color:var(--t3); border-radius:var(--r); padding:10px 18px; font-size:14px; cursor:pointer; font-family:var(--sans); transition:all .2s }
+.btn-cancel:hover { border-color:var(--err); color:var(--err) }
+.btn-save { background:var(--sage); border:none; color:#fff; border-radius:var(--r); padding:10px 24px; font-size:14px; font-weight:700; cursor:pointer; font-family:var(--sans); transition:opacity .15s; letter-spacing:.02em }
+.btn-save:hover { opacity:.85 }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   LEAFLET OVERRIDES
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.leaflet-popup-content-wrapper { background:var(--panel)!important; border:1px solid var(--b1)!important; border-radius:10px!important; color:var(--t1)!important; box-shadow:0 6px 24px rgba(80,65,50,.15)!important; font-family:var(--sans)!important }
+.leaflet-popup-tip { background:var(--panel)!important }
+.leaflet-popup-close-button { color:var(--t3)!important; font-size:16px!important }
+.pu-name { font-size:13px; font-weight:600; color:var(--t1); margin-bottom:4px }
+.pu-price { font-family:var(--mono); font-size:14px; color:var(--terra); margin-bottom:4px }
+.pu-meta { font-size:11px; color:var(--t3); line-height:1.7 }
+.pu-link { color:var(--sage); font-size:11px; display:block; margin-top:6px; text-decoration:none; font-weight:500 }
+.pu-link:hover { text-decoration:underline }
+.pu-ref { font-size:13px; font-weight:600; color:var(--terra); margin-bottom:4px }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   RWD
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+@media (max-width:768px) {
+  html,body { overflow:auto }
+  .desk-header { display:none }
+  .mob-header { display:flex }
+  .mob-tabs { display:flex }
+  .main { flex-direction:column; height:calc(100dvh - 95px) }
+  .left { width:100%; min-width:unset; border-right:none; display:none }
+  .left.tab-on { display:flex }
+  .right { display:none }
+  .right.tab-on {
+    display:block;
+    height:calc(100dvh - 95px);
+  }
+  .right.tab-on #map {
+    width:100% !important;
+    height:100% !important;
+  }
+  .f-grid { grid-template-columns:1fr }
+  .f-full { grid-column:span 1 }
+  .card-img { height:120px }
+}
+
+::-webkit-scrollbar { width:4px }
+::-webkit-scrollbar-thumb { background:var(--b1); border-radius:4px }
+</style>
+</head>
+<body>
+
+<!-- ── DESKTOP HEADER ── -->
+<header class="desk-header">
+  <div class="logo">租屋查找器<em> ◦ </em></div>
+  <div class="h-search">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input id="deskSearch" placeholder="搜尋名稱、地址、備註..." oninput="App.filter()">
+  </div>
+  <div class="h-right">
+    <span class="h-stat">共 <b id="hCount">0</b> 筆 · 均價 <b id="hAvg">—</b></span>
+    <button class="btn-add" onclick="Modal.open()">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      新增房源
+    </button>
+  </div>
+</header>
+
+<!-- ── MOBILE HEADER ── -->
+<div class="mob-header">
+  <div class="mob-row1">
+    <div class="mob-logo">租屋查找器<em> ◦ </em></div>
+    <div class="mob-search">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input id="mobSearch" placeholder="搜尋..." oninput="App.filter()">
+    </div>
+    <button class="mob-add" onclick="Modal.open()">＋ 新增</button>
+  </div>
+</div>
+
+<div class="mob-tabs">
+  <button class="mob-tab on" id="tabList" onclick="switchTab('list')">📋 列表</button>
+  <button class="mob-tab" id="tabMap" onclick="switchTab('map')">🗺 地圖</button>
+</div>
+
+<div class="main">
+
+  <!-- ━━━━━━━━━━━━━━━ LEFT ━━━━━━━━━━━━━━━ -->
+  <div class="left tab-on" id="leftPanel">
+
+    <!-- FILTER PANEL -->
+    <div class="filter-panel" id="filterPanel">
+      <div class="filter-header" onclick="toggleFilter()">
+        <div class="filter-header-left">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--t3)"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
+          <span class="filter-header-title">篩選條件</span>
+          <div id="filterTagsPreview" class="filter-tags"></div>
+        </div>
+        <span class="filter-toggle-icon" id="filterIcon">▾</span>
+      </div>
+      <div class="filter-body" id="filterBody" style="display:none">
+
+        <!-- District -->
+        <div>
+          <div class="fsec-title">地區（可複選）</div>
+          <div class="district-grid" id="districtGrid"></div>
+          <div class="district-actions">
+            <button class="btn-district-all" onclick="selectAllDistricts()">全選</button>
+            <button class="btn-district-clear" onclick="clearDistricts()">清除</button>
+          </div>
+        </div>
+
+        <!-- Price -->
+        <div>
+          <div class="fsec-title">租金範圍</div>
+          <div class="price-row">
+            <input class="pi" id="pMin" type="number" placeholder="最低" oninput="App.filter()">
+            <span style="color:var(--t3);font-size:12px">—</span>
+            <input class="pi" id="pMax" type="number" placeholder="最高" oninput="App.filter()">
+            <span style="font-size:11px;color:var(--t3)">元/月</span>
+          </div>
+        </div>
+
+        <!-- Type -->
+        <div>
+          <div class="fsec-title">房型</div>
+          <div class="type-chips" id="typeChips">
+            <button class="tchip on" data-v="all" onclick="pickTchip(this)">全部</button>
+            <button class="tchip" data-v="套房" onclick="pickTchip(this)">套房</button>
+            <button class="tchip" data-v="雅房" onclick="pickTchip(this)">雅房</button>
+            <button class="tchip" data-v="整層" onclick="pickTchip(this)">整層住家</button>
+          </div>
+        </div>
+
+        <!-- Toggles -->
+        <div>
+          <div class="fsec-title">條件</div>
+          <div class="toggle-row">
+            <label class="ti"><input type="checkbox" id="togUtil" onchange="App.filter()"><span class="tpill"></span><span>包水電</span></label>
+            <label class="ti"><input type="checkbox" id="togSub" onchange="App.filter()"><span class="tpill"></span><span>可補助</span></label>
+            <label class="ti"><input type="checkbox" id="togAgent" onchange="App.filter()"><span class="tpill"></span><span>隱藏仲介</span></label>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- REFERENCE LOCATIONS -->
+    <div class="ref-section">
+      <div class="ref-head">
+        <span class="ref-title">📍 參考地點</span>
+        <button class="btn-add-ref" onclick="Refs.add()">＋ 新增</button>
+      </div>
+      <div class="ref-list" id="refList"></div>
+      <div class="mode-row">
+        <span class="mode-label">通勤</span>
+        <div style="display:flex;gap:5px">
+          <button class="mchip on" data-v="drive" onclick="pickMchip(this)">🚗 開車</button>
+          <button class="mchip" data-v="moto" onclick="pickMchip(this)">🛵 機車</button>
+          <button class="mchip" data-v="walk" onclick="pickMchip(this)">🚶 步行</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SORT + COUNT -->
+    <div class="bar">
+      <select class="sort-sel" id="sortSel" onchange="App.filter()">
+        <option value="newest">最新新增</option>
+        <option value="price_asc">價格 低→高</option>
+        <option value="price_desc">價格 高→低</option>
+        <option value="dist_asc">距離 近→遠</option>
+      </select>
+      <span class="rcount">顯示 <b id="rCount">0</b> 筆</span>
+    </div>
+
+    <!-- CARDS -->
+    <div class="list-wrap" id="listWrap">
+      <div class="empty" id="emptyState">
+        <div class="empty-icon">🏠</div>
+        <div class="empty-title">尚無房源資料</div>
+        <div class="empty-sub">從 FB、LINE 或看房後<br>把物件記錄下來</div>
+        <button class="empty-cta" onclick="Modal.open()">＋ 新增第一筆房源</button>
+      </div>
+      <div id="cardList"></div>
+    </div>
+
+  </div><!-- /left -->
+
+  <!-- ━━━━━━━━━━━━━━━ MAP ━━━━━━━━━━━━━━━ -->
+  <div class="right" id="rightPanel">
+    <div id="map"></div>
+    <div class="map-legend">
+      <div class="ml-title">▸ 圖例</div>
+      <div class="ml-item"><div class="ml-dot" style="background:var(--sage)"></div>手動房源</div>
+      <div class="ml-item"><div class="ml-dot" style="background:var(--fog)"></div>爬蟲房源</div>
+      <div class="ml-item"><div class="ml-dot" style="background:var(--terra)"></div>參考地點 ★</div>
+
+    </div>
+    <div class="geo-bar" id="geoBar"><span class="geo-dot"></span><span id="geoMsg">定位中...</span></div>
+  </div>
+
+</div><!-- /main -->
+
+<!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     MODAL
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+<div class="modal-bg" id="modalBg" onclick="if(event.target===this)Modal.close()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-drag"></div>
+    <div class="modal-head">
+      <div class="modal-title"><em id="modalIcon">＋</em>&ensp;<span id="modalTitleText">新增房源</span></div>
+      <button class="btn-close" onclick="Modal.close()">×</button>
+    </div>
+
+    <!-- 基本資訊 -->
+    <div class="f-sec">
+      <div class="f-sec-title">基本資訊</div>
+      <div class="f-grid">
+        <div class="f-grp f-full">
+          <label class="f-lbl">名稱 / 標題 <span class="req">✱必填</span></label>
+          <input class="f-in" id="fName" placeholder="例：西屯精裝套房、小美介紹的北屯房" maxlength="60">
+          <span class="f-err" id="fNameErr">請輸入名稱</span>
+        </div>
+        <div class="f-grp f-full">
+          <label class="f-lbl">地址 <span class="req">✱必填</span> <span class="opt">（用於地圖定位）</span></label>
+          <div class="addr-group">
+            <input class="f-in" id="fAddr" placeholder="例：台中市西屯區文華路112號">
+            <button class="btn-verify-addr" id="btnVerifyAddr" type="button" onclick="Modal.verifyAddr()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              定位
+            </button>
+
+          </div>
+          <span class="f-err" id="fAddrErr">請輸入地址</span>
+          <span class="f-addr-hint" id="fAddrHint" style="display:none"></span>
+        </div>
+        <div class="f-grp">
+          <label class="f-lbl">月租金（元）<span class="opt">選填</span></label>
+          <input class="f-in" id="fPrice" type="number" placeholder="9800">
+        </div>
+        <div class="f-grp">
+          <label class="f-lbl">房型 <span class="opt">選填</span></label>
+          <select class="f-sel" id="fType">
+            <option value="">未填寫</option>
+            <option value="套房">套房</option>
+            <option value="雅房">雅房</option>
+            <option value="整層">整層住家</option>
+          </select>
+        </div>
+        <div class="f-grp">
+          <label class="f-lbl">坪數 <span class="opt">選填</span></label>
+          <input class="f-in" id="fArea" type="number" placeholder="14">
+        </div>
+        <div class="f-grp">
+          <label class="f-lbl">樓層 <span class="opt">選填</span></label>
+          <input class="f-in" id="fFloor" placeholder="例：5/12">
+        </div>
+      </div>
+    </div>
+
+    <!-- 費用 -->
+    <div class="f-sec">
+      <div class="f-sec-title">費用資訊</div>
+      <div class="f-grid">
+        <div class="f-grp">
+          <label class="f-lbl">⚡ 電費（元/度）<span class="opt">選填</span></label>
+          <input class="f-in" id="fElec" type="number" placeholder="5（台電）/ 6">
+        </div>
+        <div class="f-grp">
+          <label class="f-lbl">💧 水費 <span class="opt">選填</span></label>
+          <select class="f-sel" id="fWater">
+            <option value="">未填寫</option>
+            <option value="included">含於租金</option>
+            <option value="meter">照錶計費</option>
+            <option value="fixed">固定月付</option>
+          </select>
+        </div>
+        <div class="f-grp">
+          <label class="f-lbl">💧 水費金額（元/月）<span class="opt">選填</span></label>
+          <input class="f-in" id="fWaterAmt" type="number" placeholder="固定月付金額">
+        </div>
+        <div class="f-grp">
+          <label class="f-lbl">🏢 管理費（元/月）<span class="opt">選填</span></label>
+          <input class="f-in" id="fMgmt" type="number" placeholder="1500">
+        </div>
+      </div>
+    </div>
+
+    <!-- 條件 -->
+    <div class="f-sec">
+      <div class="f-sec-title">條件</div>
+      <div class="f-grid">
+        <div class="f-grp f-full">
+          <div class="tog-grid">
+            <label class="tog"><input type="checkbox" id="fSubsidy"><span class="tpill"></span><span>可申請租屋補助</span></label>
+            <label class="tog"><input type="checkbox" id="fAgent"><span class="tpill"></span><span>仲介物件</span></label>
+            <label class="tog"><input type="checkbox" id="fParking"><span class="tpill"></span><span>含停車位</span></label>
+            <label class="tog"><input type="checkbox" id="fPet"><span class="tpill"></span><span>寵物友善</span></label>
+          </div>
+        </div>
+        <div class="f-grp">
+          <label class="f-lbl">仲介字號 <span class="opt">選填</span></label>
+          <input class="f-in" id="fLicense" placeholder="中市房業字第001號">
+        </div>
+        <div class="f-grp">
+          <label class="f-lbl">聯絡方式 <span class="opt">選填</span></label>
+          <input class="f-in" id="fContact" placeholder="電話 / LINE ID">
+        </div>
+      </div>
+    </div>
+
+    <!-- 來源 -->
+    <div class="f-sec">
+      <div class="f-sec-title">來源 / 備註</div>
+      <div class="f-grid">
+        <div class="f-grp">
+          <label class="f-lbl">資料來源 <span class="opt">選填</span></label>
+          <select class="f-sel" id="fSource">
+            <option value="手動輸入">手動輸入</option>
+            <option value="Facebook">Facebook</option>
+            <option value="Line群組">Line 群組</option>
+            <option value="朋友介紹">朋友介紹</option>
+            <option value="591">591</option>
+            <option value="好房網">好房網</option>
+            <option value="樂屋網">樂屋網</option>
+            <option value="其他">其他</option>
+          </select>
+        </div>
+        <div class="f-grp">
+          <label class="f-lbl">原始連結 <span class="opt">選填</span></label>
+          <input class="f-in" id="fLink" type="url" placeholder="https://...">
+        </div>
+        <div class="f-grp f-full">
+          <label class="f-lbl">備註 <span class="opt">選填</span></label>
+          <textarea class="f-in" id="fNote" placeholder="屋況、印象、優缺點..." rows="3" style="resize:vertical"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- 圖片上傳 -->
+    <div class="f-sec">
+      <div class="f-sec-title">圖片（最多 4 張）</div>
+      <div id="imgPreviewArea" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;min-height:68px"></div>
+      <div style="font-size:10px;color:var(--t4);margin-top:5px">圖片暫存於瀏覽器。後端完成後可同步至雲端。</div>
+    </div>
+
+
+    <!-- 圖片上傳 -->
+    <div class="f-sec" style="margin-bottom:0">
+      <div class="f-sec-title">圖片（最多 4 張）</div>
+      <div id="imgPreviewArea" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;min-height:68px;padding:4px 0"></div>
+      <div style="font-size:10px;color:var(--t4);margin-top:4px">圖片存於瀏覽器。後端完成後可同步至雲端。</div>
+    </div>
+
+    <div class="modal-foot">
+      <button class="btn-cancel" onclick="Modal.close()">取消</button>
+      <button class="btn-save" id="btnSave" onclick="Modal.save()">儲存房源</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   DISTRICTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const DISTRICTS=["中區","東區","南區","西區","北區","西屯區","南屯區","北屯區","豐原區","大里區","太平區","霧峰區","烏日區","潭子區","大雅區","神岡區","后里區","石岡區","東勢區","和平區","新社區","沙鹿區","龍井區","梧棲區","清水區","大甲區","外埔區","大安區"];
+let selectedDistricts=new Set();
+function initDistrictGrid(){
+  const g=document.getElementById("districtGrid");
+  g.innerHTML=DISTRICTS.map(d=>`<button class="dchip" data-d="${d}" onclick="toggleDistrict(this,'${d}')">${d}</button>`).join("");
+}
+function toggleDistrict(el,d){
+  selectedDistricts.has(d)?selectedDistricts.delete(d):selectedDistricts.add(d);
+  el.classList.toggle("on",selectedDistricts.has(d));
+  App.filter(); updateFilterPreview();
+}
+function selectAllDistricts(){ DISTRICTS.forEach(d=>selectedDistricts.add(d)); document.querySelectorAll(".dchip").forEach(c=>c.classList.add("on")); App.filter(); updateFilterPreview(); }
+function clearDistricts(){ selectedDistricts.clear(); document.querySelectorAll(".dchip").forEach(c=>c.classList.remove("on")); App.filter(); updateFilterPreview(); }
+function updateFilterPreview(){
+  const el=document.getElementById("filterTagsPreview");
+  const tags=[];
+  if(selectedDistricts.size>0&&selectedDistricts.size<=3) [...selectedDistricts].forEach(d=>tags.push(`<span class="ftag">${d}</span>`));
+  else if(selectedDistricts.size>3) tags.push(`<span class="ftag">${selectedDistricts.size} 個地區</span>`);
+  const type=(document.querySelector("#typeChips .tchip.on")||{}).dataset?.v;
+  if(type&&type!=="all") tags.push(`<span class="ftag terra">${type}</span>`);
+  el.innerHTML=tags.join("");
+}
+function toggleFilter(){
+  const body=document.getElementById("filterBody"),icon=document.getElementById("filterIcon");
+  const isOpen=body.style.display!=="none";
+  body.style.display=isOpen?"none":"flex";
+  icon.classList.toggle("open",!isOpen);
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   STORE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const Store={
+  K:{l:"rqv5_lst",r:"rqv5_refs"},
+  get(k){try{return JSON.parse(localStorage.getItem(k)||"null")}catch{return null}},
+  set(k,v){localStorage.setItem(k,JSON.stringify(v))},
+  listings(){return this.get(this.K.l)||[]},
+  saveLst(a){this.set(this.K.l,a)},
+  refs(){return this.get(this.K.r)||[{id:1,name:"參考點",address:"",lat:null,lng:null,color:"#A87060"}]},
+  saveRefs(a){this.set(this.K.r,a)},
+};
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   OFFLINE GEOCODING — 內建行政區座標表
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const TW_COORDS={
+  "台中市中區":[24.1435,120.6836],"台中市東區":[24.1372,120.6950],"台中市南區":[24.1200,120.6793],
+  "台中市西區":[24.1500,120.6660],"台中市北區":[24.1580,120.6840],"台中市北屯區":[24.1920,120.6820],
+  "台中市南屯區":[24.1388,120.6441],"台中市西屯區":[24.1750,120.6350],"台中市豐原區":[24.2527,120.7188],
+  "台中市大里區":[24.1011,120.6793],"台中市太平區":[24.1280,120.7044],"台中市霧峰區":[24.0660,120.7100],
+  "台中市烏日區":[24.0880,120.6401],"台中市潭子區":[24.2100,120.7050],"台中市大雅區":[24.2290,120.6448],
+  "台中市神岡區":[24.2617,120.6625],"台中市后里區":[24.3040,120.7050],"台中市石岡區":[24.2780,120.7420],
+  "台中市東勢區":[24.2580,120.8240],"台中市和平區":[24.3590,121.0820],"台中市新社區":[24.2280,120.8050],
+  "台中市沙鹿區":[24.2268,120.5801],"台中市龍井區":[24.1740,120.5565],"台中市梧棲區":[24.2520,120.5266],
+  "台中市清水區":[24.2660,120.5628],"台中市大甲區":[24.3477,120.6220],"台中市外埔區":[24.3193,120.6408],
+  "台中市大安區":[24.3870,120.6290],
+  "台北市中正區":[25.0329,121.5197],"台北市大同區":[25.0630,121.5130],"台北市中山區":[25.0690,121.5330],
+  "台北市松山區":[25.0580,121.5770],"台北市大安區":[25.0260,121.5430],"台北市信義區":[25.0330,121.5650],
+  "台北市萬華區":[25.0380,121.4990],"台北市文山區":[24.9880,121.5700],"台北市南港區":[25.0550,121.6070],
+  "台北市內湖區":[25.0830,121.5870],"台北市士林區":[25.0930,121.5250],"台北市北投區":[25.1320,121.4990],
+  "新北市板橋區":[25.0120,121.4630],"新北市三重區":[25.0620,121.4880],"新北市中和區":[24.9950,121.4940],
+  "新北市永和區":[25.0150,121.5170],"新北市新莊區":[25.0430,121.4490],"新北市新店區":[24.9680,121.5380],
+  "新北市淡水區":[25.1700,121.4430],
+  "高雄市三民區":[22.6490,120.3180],"高雄市前鎮區":[22.5870,120.3280],"高雄市鹽埕區":[22.6240,120.2870],
+  "高雄市苓雅區":[22.6230,120.3180],"高雄市新興區":[22.6320,120.3030],"高雄市左營區":[22.6900,120.2980],
+  "高雄市鳳山區":[22.6270,120.3570],
+  "台南市中西區":[22.9970,120.1970],"台南市東區":[22.9890,120.2200],"台南市南區":[22.9770,120.1900],
+  "台南市北區":[23.0110,120.2040],"台南市安平區":[22.9920,120.1680],"台南市安南區":[23.0340,120.1780],
+  "桃園市桃園區":[24.9932,121.3010],"桃園市中壢區":[24.9654,121.2247],
+  "台北市":[25.0478,121.5319],"台中市":[24.1477,120.6736],"台南市":[22.9999,120.2270],
+  "高雄市":[22.6273,120.3014],"新北市":[25.0169,121.4627],"桃園市":[24.9936,121.3010],
+  "新竹市":[24.8066,120.9686],"嘉義市":[23.4801,120.4491],"基隆市":[25.1324,121.7424],
+};
+
+// ── 地址正規化 ────────────────────────────────────────────────────────────
+function normalizeAddr(addr){
+  return addr.trim()
+    .replace(/^\d{3,6}\s*/,"")   // 移除郵遞區號
+    .replace(/臺/g,"台")          // 臺→台
+    .replace(/[，、。,]/g," ")    // 全形標點→空格
+    .replace(/\s+/g," ")
+    .trim();
+}
+
+// ── Nominatim Geocoding（OpenStreetMap）─────────────────────────────────
+// 使用 Nominatim 官方服務，限速 1 req/s，個人使用完全足夠
+let _lastGeoTime = 0;
+
+async function geocodeAddr(addr){
+  if(!addr.trim()) return null;
+  const clean = normalizeAddr(addr);
+
+  // 節流：確保每次請求間隔至少 1100ms（Nominatim 政策）
+  const now = Date.now();
+  const wait = Math.max(0, 1100 - (now - _lastGeoTime));
+  if(wait > 0) await new Promise(r => setTimeout(r, wait));
+  _lastGeoTime = Date.now();
+
+  // 依序嘗試不同格式
+  const queries = [
+    clean + " 台灣",
+    clean,
+  ];
+
+  for(const q of queries){
+    try{
+      const url = "https://nominatim.openstreetmap.org/search"
+        + "?format=json&limit=1&addressdetails=1"
+        + "&countrycodes=tw"
+        + "&q=" + encodeURIComponent(q);
+      const res = await fetch(url, {
+        headers: { "Accept": "application/json" },
+        signal: AbortSignal.timeout(8000)
+      });
+      if(!res.ok) continue;
+      const data = await res.json();
+      if(data && data[0]){
+        const r = data[0];
+        return {
+          lat: parseFloat(r.lat),
+          lng: parseFloat(r.lon),
+          display: r.display_name.split(",").slice(0,3).join(",").trim(),
+          approximate: false
+        };
+      }
+    } catch(e){
+      console.warn("Nominatim error:", e.message);
+    }
+  }
+
+  // Nominatim 失敗時，降級到行政區近似座標
+  const a = clean;
+  const keys = Object.keys(TW_COORDS).sort((x,y)=>y.length-x.length);
+  for(const k of keys){
+    if(a.includes(k)){
+      const [lat,lng] = TW_COORDS[k];
+      return { lat, lng, display: k+"（行政區近似，建議重新定位）", approximate: true };
+    }
+  }
+  return null;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   DISTANCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const Dist={
+  // Haversine 直線距離（km）
+  hav(a,b,c,d){
+    const R=6371,dL=(c-a)*Math.PI/180,dG=(d-b)*Math.PI/180;
+    const x=Math.sin(dL/2)**2+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dG/2)**2;
+    return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+  },
+  // 道路修正係數：市區 1.35，郊區 1.2（取中間值 1.3）
+  ROAD_FACTOR: 1.3,
+  // 台灣實測平均速度 km/h [離峰, 尖峰]
+  // 開車：台中市區離峰25、尖峰15；機車較靈活；步行基本固定
+  SP:{drive:[25,15], moto:[28,18], walk:[5,4.5]},
+  // 從直線距離估算實際路程距離
+  roadKm(straightKm){ return straightKm * this.ROAD_FACTOR; },
+  // 時間區間（分鐘）
+  time(roadKm,m){
+    const[op,pk]=this.SP[m]||this.SP.drive;
+    const a=Math.round(roadKm/op*60), b=Math.round(roadKm/pk*60);
+    return{min:Math.min(a,b), max:Math.max(a,b)};
+  },
+  calc(l,refs,m){
+    if(!refs.length||!l.lat) return null;
+    return refs.filter(r=>r.lat&&r.lng).map(r=>{
+      const straight=this.hav(l.lat,l.lng,r.lat,r.lng);
+      const road=this.roadKm(straight);
+      return {name:r.name, color:r.color, straightKm:straight, km:road, time:this.time(road,m)};
+    });
+  }
+};
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   REFERENCE LOCATIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const REF_COLORS=["#A87060","#B08090","#7A8CA0","#7B8C7A","#B09870"];
+const Refs={
+  _list:[],_nid:10,
+  init(){this._list=Store.refs();this._nid=Math.max(...this._list.map(r=>r.id),9)+1;this.render()},
+  save(){Store.saveRefs(this._list)},
+  active(){return this._list.filter(r=>r.lat&&r.lng)},
+  add(){
+    this._list.push({id:this._nid++,name:"地點"+(this._list.length+1),address:"",lat:null,lng:null,color:REF_COLORS[this._list.length%REF_COLORS.length]});
+    this.save();this.render();
+  },
+  remove(id){this._list=this._list.filter(r=>r.id!==id);this.save();this.render();MapMod.renderRefs(this.active());App.filter()},
+  set(id,f,v){const r=this._list.find(r=>r.id===id);if(r)r[f]=v},
+  render(){
+    const el=document.getElementById("refList");
+    if(!this._list.length){el.innerHTML='<div style="font-size:11px;color:var(--t4);padding:2px 0">尚未設定參考地點</div>';return}
+    el.innerHTML=this._list.map(r=>`
+      <div class="ref-item">
+        <div class="ref-dot" style="background:${r.color}"></div>
+        <input class="ref-name-in" value="${r.name}" placeholder="名稱"
+          oninput="Refs.set(${r.id},'name',this.value);Refs.save()">
+        <input class="ref-addr-in" id="refaddr-${r.id}" value="${r.address||''}" placeholder="輸入地址（離開欄位自動定位）"
+          oninput="Refs.set(${r.id},'address',this.value)"
+          onblur="Refs.autoGeocode(${r.id})"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur()}">
+        <button class="btn-geo-ref ${r.lat?'geocoded':''}" onclick="Refs.autoGeocode(${r.id})" title="${r.lat?('已定位: '+r.address):'點此定位'}">
+          ${r.lat?"✓":"📍"}
+        </button>
+        <button class="btn-del-ref" onclick="Refs.remove(${r.id})">×</button>
+      </div>`).join("");
+  },
+  async autoGeocode(id){
+    const r=this._list.find(r=>r.id===id);
+    if(!r) return;
+    const input=document.getElementById("refaddr-"+id);
+    const addr=(input?input.value:r.address||"").trim();
+    if(!addr) return;
+    if(r.lat&&r.address===addr) return; // already geocoded same addr
+    const bar=document.getElementById("geoBar"),msg=document.getElementById("geoMsg");
+    const btn=document.querySelector(`button[onclick="Refs.autoGeocode(${id})"]`);
+    if(btn){btn.textContent="…";btn.disabled=true;}
+    bar.classList.add("on"); msg.textContent="定位「"+addr+"」中...";
+    const result=await geocodeAddr(addr);
+    if(result){
+      r.lat=result.lat; r.lng=result.lng; r.address=addr;
+      this.save(); this.render();
+      MapMod.renderRefs(this.active());
+      App.filter();
+      if(MapMod._ready&&MapMod._map) MapMod._map.flyTo([result.lat,result.lng],14,{animate:true,duration:0.8});
+      msg.textContent = result.approximate
+        ? "⚠ 近似位置："+result.display
+        : "✓ 精確定位："+result.display;
+      setTimeout(()=>bar.classList.remove("on"),3000);
+    } else {
+      if(btn){btn.textContent="📍";btn.disabled=false;}
+      msg.textContent="⚠ 找不到地址。請確認格式：台中市北區育德路2號（需含縣市區）";
+      setTimeout(()=>bar.classList.remove("on"),4000);
+    }
+  }
+};
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   MAP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const MapMod={
+  _map:null,_lm:{},_rm:[],_ready:false,
+  init(){if(window.innerWidth>768)this._doInit();},
+  _doInit(){
+    if(this._ready)return;
+    this._ready=true;
+    this._map=L.map("map",{center:[24.155,120.66],zoom:12});
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",{attribution:"© OpenStreetMap © CARTO",subdomains:"abcd",maxZoom:20}).addTo(this._map);
+  },
+  pinIcon(color){
+    const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36"><path d="M14 1C7.92 1 3 5.92 3 12c0 9.25 11 23 11 23S25 21.25 25 12C25 5.92 20.08 1 14 1z" fill="${color}" stroke="rgba(255,255,255,0.6)" stroke-width="1.5"/><circle cx="14" cy="12" r="4" fill="rgba(255,255,255,0.8)"/></svg>`;
+    return L.divIcon({html:svg,className:"",iconSize:[28,36],iconAnchor:[14,36],popupAnchor:[0,-36]});
+  },
+  refIcon(color){
+    const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="34" height="42" viewBox="0 0 34 42"><path d="M17 2C10.37 2 5 7.37 5 14c0 10.5 12 26 12 26S29 24.5 29 14C29 7.37 23.63 2 17 2z" fill="${color}" stroke="white" stroke-width="2"/><text x="17" y="18" text-anchor="middle" dominant-baseline="middle" font-size="14" fill="white">★</text></svg>`;
+    return L.divIcon({html:svg,className:"",iconSize:[34,42],iconAnchor:[17,42],popupAnchor:[0,-42]});
+  },
+  renderListings(listings,refs,mode){
+    if(!this._ready)return;
+    Object.values(this._lm).forEach(m=>this._map.removeLayer(m));this._lm={};
+    listings.forEach(l=>{
+      if(!l.lat)return;
+      const isCrawl=["591","好房網","樂屋網"].includes(l.source);
+      const color=isCrawl?"#7A8CA0":"#7B8C7A";
+      const com=Dist.calc(l,refs,mode);
+      const km=com&&com[0]?com[0].km.toFixed(1)+" km":"";
+      const popup=`<div class="pu-name">🏠 ${l.name}</div>${l.price?`<div class="pu-price">NT$ ${Number(l.price).toLocaleString()} / 月</div>`:""}<div class="pu-meta">${l.address}${km?`<br>📍 ${km}（${com[0].time.min}–${com[0].time.max} 分）`:""}</div>${l.link?`<a class="pu-link" href="${l.link}" target="_blank">→ 查看來源 ↗</a>`:""}`;
+      const m=L.marker([l.lat,l.lng],{icon:this.pinIcon(color)}).addTo(this._map).bindPopup(popup,{maxWidth:240});
+      m.on("click",()=>{UI.highlightCard(l.id);if(window.innerWidth<=768)switchTab("list");});
+      this._lm[l.id]=m;
+    });
+  },
+  renderRefs(refs){
+    if(!this._ready)return;
+    this._rm.forEach(m=>this._map.removeLayer(m));this._rm=[];
+    refs.forEach(r=>{
+      if(!r.lat||!r.lng)return;
+      const m=L.marker([r.lat,r.lng],{icon:this.refIcon(r.color)}).addTo(this._map)
+        .bindPopup(`<div class="pu-ref">★ ${r.name}</div><div class="pu-meta">${r.address}</div>`,{maxWidth:180});
+      this._rm.push(m);
+    });
+  },
+  flyOpen(id){if(!this._ready)return;const m=this._lm[id];if(m){this._map.flyTo(m.getLatLng(),Math.max(this._map.getZoom(),15),{animate:true,duration:.5});m.openPopup();}},
+};
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   IMAGE UPLOAD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const ImgUpload={
+  _imgs:[],
+  init(existing){
+    this._imgs=existing?[...existing]:[];
+    this.render();
+  },
+  async addFile(input){
+    const files=Array.from(input.files);
+    for(const file of files){
+      if(!file.type.startsWith("image/"))continue;
+      if(this._imgs.length>=4){alert("最多上傳 4 張圖片");break;}
+      const b64=await new Promise(res=>{const r=new FileReader();r.onload=()=>res(r.result);r.readAsDataURL(file);});
+      this._imgs.push(b64);
+    }
+    input.value="";
+    this.render();
+  },
+  remove(i){this._imgs.splice(i,1);this.render();},
+  render(){
+    const container=document.getElementById("imgPreviewArea");
+    if(!container)return;
+    container.innerHTML=this._imgs.map((src,i)=>`
+      <div style="position:relative;width:80px;height:60px;border-radius:6px;overflow:hidden;border:1px solid var(--b1);flex-shrink:0">
+        <img src="${src}" style="width:100%;height:100%;object-fit:cover">
+        <button onclick="ImgUpload.remove(${i})" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);border:none;color:#fff;border-radius:50%;width:18px;height:18px;font-size:11px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center">×</button>
+      </div>`).join("")+
+      (this._imgs.length<4?`<label style="width:80px;height:60px;border-radius:6px;border:1px dashed var(--b2);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;color:var(--t3);font-size:11px;gap:3px;flex-shrink:0">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+        新增圖片
+        <input type="file" accept="image/*" multiple style="display:none" onchange="ImgUpload.addFile(this)">
+      </label>`:"");
+  },
+  get(){return this._imgs.length?[...this._imgs]:null;}
+};
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   UI
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const UI={
+  timeAgo(ts){const d=(Date.now()-ts)/1000;if(d<60)return"剛剛";if(d<3600)return Math.round(d/60)+"分鐘前";if(d<86400)return Math.round(d/3600)+"小時前";return Math.round(d/86400)+"天前"},
+  highlightCard(id){document.querySelectorAll(".card").forEach(c=>c.classList.remove("active"));const el=document.querySelector(`.card[data-id="${id}"]`);if(el){el.classList.add("active");el.scrollIntoView({behavior:"smooth",block:"nearest"})}},
+  renderCards(listings,refs,mode){
+    const empty=document.getElementById("emptyState"),cl=document.getElementById("cardList");
+    empty.style.display=listings.length?"none":"flex";
+    if(!listings.length){cl.innerHTML="";return}
+    const me={drive:"🚗",moto:"🛵",walk:"🚶"}[mode]||"🚗";
+    cl.innerHTML=listings.map((l,i)=>{
+      const com=Dist.calc(l,refs,mode);
+      const isCrawl=["591","好房網","樂屋網"].includes(l.source);
+      const imgSrc=l.images&&l.images.length?l.images[0]:null;
+      const imgHtml=imgSrc
+        ?`<div class="card-img${isCrawl?"":" manual-src"}"><img src="${imgSrc}" alt="" loading="lazy">${l.type?`<span class="card-img-type">${l.type}</span>`:""}<span class="card-img-source">${l.source}</span></div>`
+        :`<div class="card-img${isCrawl?"":" manual-src"}"><div class="card-img-placeholder"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><span>${isCrawl?"圖片待載入":"尚無圖片"}</span></div>${l.type?`<span class="card-img-type">${l.type}</span>`:""}<span class="card-img-source">${l.source}</span></div>`;
+      const comHtml=com&&com.length?`<div class="commute">
+        ${com.map(d=>`<div class="crow">
+          <div class="cdot" style="background:${d.color}"></div>
+          <span class="clabel">${d.name}</span>
+          <span class="ckm">${d.km.toFixed(1)} km</span>
+          <span class="ctime">${me} 約 ${d.time.min}–${d.time.max} 分</span>
+        </div>`).join("")}
+      </div>`:"";
+      const wLbl={included:"含水費",meter:"水錶",fixed:`水費${l.waterAmt?l.waterAmt+"元":""}`};
+      const utilItems=[];
+      if(l.elec) utilItems.push(`<span class="util-chip">⚡<b>${l.elec}元/度</b></span>`);
+      if(l.water) utilItems.push(`<span class="util-chip">💧<b>${wLbl[l.water]||""}</b></span>`);
+      if(l.mgmt) utilItems.push(`<span class="util-chip">🏢<b>${Number(l.mgmt).toLocaleString()}元</b></span>`);
+      const utilHtml=utilItems.length?`<div class="util-row">${utilItems.join("")}</div>`:"";
+      const tags=[];
+      if(l.area) tags.push(`<span class="tag tag-neu">${l.area}坪</span>`);
+      if(l.floor) tags.push(`<span class="tag tag-neu">${l.floor}F</span>`);
+      if(l.subsidy) tags.push(`<span class="tag tag-sub">補助</span>`);
+      if(l.parking) tags.push(`<span class="tag tag-neu">車位</span>`);
+      if(l.pet) tags.push(`<span class="tag tag-neu">寵物</span>`);
+      if(l.agent) tags.push(`<span class="tag tag-warn">仲介</span>`);
+      return `<div class="card" data-id="${l.id}" style="animation-delay:${Math.min(i,20)*12}ms" onclick="App.onCardClick(${l.id})">
+        ${imgHtml}
+        <div class="card-body">
+          <div class="card-top"><div class="card-title">${l.name}</div><span class="manual-pill">${l.source}</span></div>
+          <div class="card-price-row">${l.price?`<span class="price">NT$ ${Number(l.price).toLocaleString()}</span><span class="price-unit">/月</span>`:`<span class="no-price">租金未填</span>`}</div>
+          ${tags.length?`<div class="card-tags">${tags.join("")}</div>`:""}
+          ${utilHtml}
+          ${comHtml}
+          <div class="info-row"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg><span>${l.address}${!l.lat?' <span style="color:var(--warn);font-size:10px">未定位</span>':""}</span></div>
+          ${l.contact?`<div class="info-row"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 014.17 12 19.79 19.79 0 011.1 3.43 2 2 0 013.09 1.25h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L7.09 8.63a16 16 0 006.29 6.29l1.45-1.45a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg><span>${l.contact}</span></div>`:""}
+          ${l.note?`<div class="card-note">${l.note}</div>`:""}
+          <div class="del-confirm" id="delconfirm-${l.id}" onclick="event.stopPropagation()"><span>確定刪除？</span><button class="btn-del-yes" onclick="App.doDelete(${l.id})">刪除</button><button class="btn-del-no" onclick="App.cancelDelete(${l.id})">取消</button></div>
+          <div class="card-foot"><span class="card-ts">${UI.timeAgo(l.createdAt)}</span><div class="card-actions"><button class="btn-sm" onclick="event.stopPropagation();Modal.open(${l.id})">編輯</button><button class="btn-sm del" onclick="event.stopPropagation();App.confirmDelete(${l.id})">刪除</button>${l.link?`<a class="btn-link" href="${l.link}" target="_blank" onclick="event.stopPropagation()">連結</a>`:""}</div></div>
+        </div></div>`;
+    }).join("");
+  },
+  updateStats(vis,all){
+    document.getElementById("rCount").textContent=vis.length;
+    document.getElementById("hCount").textContent=all.length;
+    const wp=vis.filter(l=>l.price);
+    const avg=wp.length?Math.round(wp.reduce((s,l)=>s+Number(l.price),0)/wp.length):0;
+    document.getElementById("hAvg").textContent=avg?"NT$"+avg.toLocaleString():"—";
+  }
+};
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   MODAL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const Modal={
+  _id:null,_verifiedAddr:null,_verifiedLat:null,_verifiedLng:null,
+  open(id){
+    this._id=id||null;
+    this._verifiedAddr=null;this._verifiedLat=null;this._verifiedLng=null;
+    document.getElementById("modalIcon").textContent=id?"✏️":"＋";
+    document.getElementById("modalTitleText").textContent=id?"編輯房源":"新增房源";
+    document.getElementById("modalBg").classList.add("on");
+    const flds={fName:"name",fAddr:"address",fPrice:"price",fType:"type",fArea:"area",fFloor:"floor",fElec:"elec",fWater:"water",fWaterAmt:"waterAmt",fMgmt:"mgmt",fLicense:"license",fContact:"contact",fSource:"source",fLink:"link",fNote:"note"};
+    const existing=id?Store.listings().find(l=>l.id===id):null;
+    if(existing){
+      Object.entries(flds).forEach(([fid,key])=>{const el=document.getElementById(fid);if(el)el.value=existing[key]||"";});
+      document.getElementById("fSubsidy").checked=!!existing.subsidy;
+      document.getElementById("fAgent").checked=!!existing.agent;
+      document.getElementById("fParking").checked=!!existing.parking;
+      document.getElementById("fPet").checked=!!existing.pet;
+      ImgUpload.init(existing.images);
+      if(existing.lat){this._verifiedAddr=existing.address;this._verifiedLat=existing.lat;this._verifiedLng=existing.lng;}
+    } else {
+      Object.keys(flds).forEach(fid=>{const el=document.getElementById(fid);if(el)el.value=fid==="fSource"?"手動輸入":"";});
+      ["fSubsidy","fAgent","fParking","fPet"].forEach(fid=>{const el=document.getElementById(fid);if(el)el.checked=false;});
+      ImgUpload.init(null);
+    }
+    ["fName","fAddr"].forEach(f=>{document.getElementById(f).classList.remove("err");document.getElementById(f+"Err").classList.remove("on");});
+    const hint=document.getElementById("fAddrHint");if(hint)hint.style.display="none";
+    const vbtn=document.getElementById("btnVerifyAddr");
+    if(vbtn){
+      if(existing?.lat){vbtn.className="btn-verify-addr ok";vbtn.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> 已定位';}
+      else{vbtn.className="btn-verify-addr";vbtn.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg> 定位';vbtn.disabled=false;}
+    }
+    setTimeout(()=>document.getElementById("fName").focus(),150);
+  },
+  close(){document.getElementById("modalBg").classList.remove("on");this._id=null;},
+  async verifyAddr(){
+    const addr=document.getElementById("fAddr").value.trim();
+    const hint=document.getElementById("fAddrHint");
+    const btn=document.getElementById("btnVerifyAddr");
+    if(!addr){hint.className="f-addr-hint warn";hint.style.display="flex";hint.innerHTML="⚠ 請先填寫地址";return;}
+    btn.disabled=true;btn.innerHTML="定位中...";hint.style.display="none";
+    const result=await geocodeAddr(addr);
+    if(result){
+      this._verifiedLat=result.lat;this._verifiedLng=result.lng;this._verifiedAddr=addr;
+      hint.className="f-addr-hint ok";hint.style.display="flex";
+      if(result.approximate){
+        hint.innerHTML='⚠ Nominatim 無法找到精確位置，使用行政區近似座標：' + result.display;
+        hint.className="f-addr-hint warn";
+      } else {
+        hint.innerHTML='✓ 定位成功：' + result.display;
+        hint.className="f-addr-hint ok";
+      }
+      btn.className="btn-verify-addr ok";btn.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> 已定位';
+    } else {
+      this._verifiedLat=null;this._verifiedLng=null;
+      hint.className="f-addr-hint warn";hint.style.display="flex";
+      hint.innerHTML="⚠ 找不到地址。請確認格式：<b>台中市北區育德路2號</b>";
+      btn.className="btn-verify-addr";btn.innerHTML="重試定位";
+    }
+    btn.disabled=false;
+  },
+  async save(){
+    const name=document.getElementById("fName").value.trim();
+    const addr=document.getElementById("fAddr").value.trim();
+    let ok=true;
+    if(!name){document.getElementById("fName").classList.add("err");document.getElementById("fNameErr").classList.add("on");ok=false;}
+    else{document.getElementById("fName").classList.remove("err");document.getElementById("fNameErr").classList.remove("on");}
+    if(!addr){document.getElementById("fAddr").classList.add("err");document.getElementById("fAddrErr").classList.add("on");ok=false;}
+    else{document.getElementById("fAddr").classList.remove("err");document.getElementById("fAddrErr").classList.remove("on");}
+    if(!ok)return;
+    const btn=document.getElementById("btnSave");
+    btn.textContent="儲存中...";btn.disabled=true;
+    let lat=null,lng=null;
+    const exist=this._id?Store.listings().find(l=>l.id===this._id):null;
+    if(this._verifiedAddr===addr&&this._verifiedLat){lat=this._verifiedLat;lng=this._verifiedLng;}
+    else if(exist&&exist.address===addr&&exist.lat){lat=exist.lat;lng=exist.lng;}
+    else{const r=await geocodeAddr(addr);if(r){lat=r.lat;lng=r.lng;}}
+    const obj={
+      id:this._id||Date.now(),name,address:addr,lat,lng,
+      price:document.getElementById("fPrice").value||null,
+      type:document.getElementById("fType").value||null,
+      area:document.getElementById("fArea").value||null,
+      floor:document.getElementById("fFloor").value||null,
+      elec:document.getElementById("fElec").value||null,
+      water:document.getElementById("fWater").value||null,
+      waterAmt:document.getElementById("fWaterAmt").value||null,
+      mgmt:document.getElementById("fMgmt").value||null,
+      subsidy:document.getElementById("fSubsidy").checked,
+      agent:document.getElementById("fAgent").checked,
+      parking:document.getElementById("fParking").checked,
+      pet:document.getElementById("fPet").checked,
+      license:document.getElementById("fLicense").value.trim()||null,
+      contact:document.getElementById("fContact").value.trim()||null,
+      source:document.getElementById("fSource").value,
+      link:document.getElementById("fLink").value.trim()||null,
+      note:document.getElementById("fNote").value.trim()||null,
+      images:ImgUpload.get(),
+      createdAt:exist?.createdAt||Date.now(),
+    };
+    let all=Store.listings();
+    all=this._id?all.map(l=>l.id===this._id?obj:l):[obj,...all];
+    Store.saveLst(all);
+    btn.textContent="儲存房源";btn.disabled=false;
+    this.close();App.filter();
+  }
+};
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   APP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const App={
+  filter(){
+    const q=(document.getElementById("deskSearch")?.value||document.getElementById("mobSearch")?.value||"").toLowerCase();
+    const type=(document.querySelector("#typeChips .tchip.on")||{}).dataset?.v||"all";
+    const mode=(document.querySelector(".mchip.on")||{}).dataset?.v||"drive";
+    const pMin=parseFloat(document.getElementById("pMin").value)||0;
+    const pMax=parseFloat(document.getElementById("pMax").value)||Infinity;
+    const onlyUtil=document.getElementById("togUtil").checked;
+    const onlySub=document.getElementById("togSub").checked;
+    const hideAgent=document.getElementById("togAgent").checked;
+    const sort=document.getElementById("sortSel").value;
+    const refs=Refs.active();
+    const all=Store.listings();
+    let res=[...all];
+    if(q) res=res.filter(l=>(l.name+l.address+(l.note||"")).toLowerCase().includes(q));
+    if(selectedDistricts.size>0) res=res.filter(l=>{const addr=l.address||"";return [...selectedDistricts].some(d=>addr.includes(d));});
+    if(type!=="all") res=res.filter(l=>l.type===type);
+    if(pMin) res=res.filter(l=>l.price&&Number(l.price)>=pMin);
+    if(pMax<Infinity) res=res.filter(l=>l.price&&Number(l.price)<=pMax);
+    if(onlyUtil) res=res.filter(l=>l.water==="included");
+    if(onlySub) res=res.filter(l=>l.subsidy);
+    if(hideAgent) res=res.filter(l=>!l.agent);
+    if(sort==="price_asc") res.sort((a,b)=>(Number(a.price)||999999)-(Number(b.price)||999999));
+    if(sort==="price_desc") res.sort((a,b)=>(Number(b.price)||0)-(Number(a.price)||0));
+    if(sort==="dist_asc"&&refs.length) res.sort((a,b)=>{const da=a.lat?Dist.hav(a.lat,a.lng,refs[0].lat,refs[0].lng):999;const db=b.lat?Dist.hav(b.lat,b.lng,refs[0].lat,refs[0].lng):999;return da-db;});
+    UI.updateStats(res,all);
+    UI.renderCards(res,refs,mode);
+    MapMod.renderListings(res,refs,mode);
+    updateFilterPreview();
+  },
+  onCardClick(id){UI.highlightCard(id);MapMod.flyOpen(id);if(window.innerWidth<=768)switchTab("map");},
+  confirmDelete(id){document.querySelectorAll(".del-confirm.show").forEach(el=>el.classList.remove("show"));document.getElementById("delconfirm-"+id)?.classList.add("show");},
+  cancelDelete(id){document.getElementById("delconfirm-"+id)?.classList.remove("show");},
+  doDelete(id){Store.saveLst(Store.listings().filter(l=>l.id!==id));this.filter();}
+};
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   HELPERS & INIT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+function pickTchip(el){document.querySelectorAll("#typeChips .tchip").forEach(c=>c.classList.remove("on"));el.classList.add("on");App.filter();updateFilterPreview();}
+function pickMchip(el){document.querySelectorAll(".mchip").forEach(c=>c.classList.remove("on"));el.classList.add("on");App.filter();}
+function switchTab(tab){
+  const l=document.getElementById("leftPanel"),r=document.getElementById("rightPanel");
+  const tl=document.getElementById("tabList"),tm=document.getElementById("tabMap");
+  if(tab==="list"){l.classList.add("tab-on");r.classList.remove("tab-on");tl.classList.add("on");tm.classList.remove("on");}
+  else{
+    r.classList.add("tab-on");l.classList.remove("tab-on");tm.classList.add("on");tl.classList.remove("on");
+    MapMod._doInit();
+    setTimeout(()=>{MapMod._map?.invalidateSize(true);MapMod.renderRefs(Refs.active());App.filter();},350);
+  }
+}
+
+window.addEventListener("DOMContentLoaded",()=>{
+  initDistrictGrid();
+  MapMod.init();
+  Refs.init();
+  MapMod.renderRefs(Refs.active());
+  App.filter();
+  document.getElementById("deskSearch").addEventListener("input",()=>{document.getElementById("mobSearch").value=document.getElementById("deskSearch").value;App.filter();});
+  document.getElementById("mobSearch").addEventListener("input",()=>{document.getElementById("deskSearch").value=document.getElementById("mobSearch").value;App.filter();});
+  window.addEventListener("resize",()=>{MapMod._map?.invalidateSize(true);});
+});
+</script>
+</body>
+</html>
