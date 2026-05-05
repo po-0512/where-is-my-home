@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>租了啦</title>
+<title>租屋查找器</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -179,6 +179,42 @@ html,body { height:100%; overflow:hidden; background:var(--bg); color:var(--t1);
   outline:none; cursor:pointer; flex:1; transition:border-color .2s;
 }
 .city-sel:focus { border-color:var(--fog) }
+.city-sel {
+  background:var(--bg); border:1px solid var(--b1); color:var(--t1);
+  border-radius:var(--r); padding:5px 10px; font-size:13px; font-family:var(--sans);
+  outline:none; cursor:pointer; flex:1; transition:border-color .2s;
+}
+.city-sel:focus { border-color:var(--fog) }
+.pu-detail-btn {
+  width:100%; padding:7px; border-radius:7px; border:none; cursor:pointer;
+  background:var(--sage); color:#fff; font-size:12px; font-weight:700;
+  font-family:var(--sans); letter-spacing:.02em; transition:opacity .15s; margin-top:2px;
+}
+.pu-detail-btn:hover { opacity:.85 }
+/* Disclaimer modal */
+.disc-bg {
+  position:fixed; inset:0; background:rgba(58,50,40,.65); z-index:999;
+  display:flex; align-items:center; justify-content:center; padding:20px;
+  opacity:0; pointer-events:none; transition:opacity .25s;
+}
+.disc-bg.on { opacity:1; pointer-events:all }
+.disc-box {
+  background:var(--panel); border:1px solid var(--b1); border-radius:14px;
+  max-width:480px; width:100%; padding:28px 24px; display:flex;
+  flex-direction:column; gap:14px; transform:scale(.97); transition:transform .2s;
+}
+.disc-bg.on .disc-box { transform:scale(1) }
+.disc-title { font-size:16px; font-weight:700; color:var(--t1); display:flex; align-items:center; gap:8px }
+.disc-body { font-size:13px; color:var(--t2); line-height:1.7 }
+.disc-body b { color:var(--t1) }
+.disc-body ul { margin:8px 0 0 18px; display:flex; flex-direction:column; gap:4px }
+.disc-foot { display:flex; justify-content:flex-end }
+.btn-disc-ok {
+  background:var(--sage); border:none; color:#fff; border-radius:var(--r);
+  padding:9px 24px; font-size:14px; font-weight:700; cursor:pointer;
+  font-family:var(--sans); transition:opacity .15s;
+}
+.btn-disc-ok:hover { opacity:.85 }
 .district-grid {
   display:flex; flex-wrap:wrap; gap:5px;
 }
@@ -921,103 +957,84 @@ html,body { height:100%; overflow:hidden; background:var(--bg); color:var(--t1);
   </div>
 </div>
 
+
+<!-- DISCLAIMER MODAL -->
+<div class="disc-bg" id="disclaimerModal">
+  <div class="disc-box">
+    <div class="disc-title">⚠️ 使用說明與免責聲明</div>
+    <div class="disc-body">
+      <b>本工具為個人租屋資訊整理輔助工具，請注意以下事項：</b>
+      <ul>
+        <li><b>地圖標記位置</b>：透過 Google Maps 定位，精確度取決於地址格式是否完整。</li>
+        <li><b>距離計算</b>：由 Google Distance Matrix API 計算實際路線距離，<b>非直線距離</b>。首次載入可能顯示「估算」，約數秒後更新為精確值。</li>
+        <li><b>通勤時間</b>：顯示「離峰–尖峰」區間。🚗開車 / 🛵機車 依 Google 路線計算；機車時間為開車時間 × 0.87（台灣機車通常較快）。實際時間因路況、天氣等因素而異。</li>
+        <li><b>房源資料</b>：均為使用者手動輸入，本工具不保證資料的正確性與即時性，請以實際看房確認為準。</li>
+      </ul>
+    </div>
+    <div class="disc-foot">
+      <button class="btn-disc-ok" onclick="closeDisclaimer()">我了解，開始使用</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   DISTRICTS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-// ── 縣市 → 行政區對照表 ───────────────────────────────────────────────────
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   RENTAL FINDER v4  —  Clean Build
+   Google Maps Geocoding + Distance Matrix API
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+/* ── API Key ──────────────────────────────────────────── */
+const GOOGLE_API_KEY = "AIzaSyD_9Ac5t7gn3zbsaZ-NNo1Pcb_xU-et4t4";
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   COUNTY / DISTRICT DATA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 const CITY_DISTRICTS = {
-  "台中市": ["中區","東區","南區","西區","北區","西屯區","南屯區","北屯區",
-             "豐原區","大里區","太平區","霧峰區","烏日區","潭子區","大雅區",
-             "神岡區","后里區","石岡區","東勢區","和平區","新社區","沙鹿區",
-             "龍井區","梧棲區","清水區","大甲區","外埔區","大安區"],
-  "台北市": ["中正區","大同區","中山區","松山區","大安區","信義區",
-             "萬華區","文山區","南港區","內湖區","士林區","北投區"],
-  "新北市": ["板橋區","三重區","中和區","永和區","新莊區","新店區",
-             "樹林區","鶯歌區","三峽區","淡水區","汐止區","瑞芳區",
-             "土城區","蘆洲區","五股區","泰山區","林口區","深坑區",
-             "石碇區","坪林區","三芝區","石門區","八里區","平溪區",
-             "雙溪區","貢寮區","金山區","萬里區","烏來區"],
-  "台南市": ["中西區","東區","南區","北區","安平區","安南區",
-             "永康區","歸仁區","新化區","左鎮區","玉井區","楠西區",
-             "南化區","仁德區","關廟區","龍崎區","官田區","麻豆區",
-             "佳里區","西港區","七股區","將軍區","學甲區","北門區",
-             "新營區","後壁區","白河區","東山區","六甲區","下營區",
-             "柳營區","鹽水區","善化區","大內區","山上區","新市區",
-             "安定區"],
-  "高雄市": ["楠梓區","左營區","鼓山區","三民區","鹽埕區","前金區",
-             "苓雅區","前鎮區","旗津區","小港區","鳳山區","林園區",
-             "大寮區","大樹區","大社區","仁武區","鳥松區","岡山區",
-             "橋頭區","燕巢區","田寮區","阿蓮區","路竹區","湖內區",
-             "茄萣區","永安區","彌陀區","梓官區","旗山區","美濃區",
-             "六龜區","甲仙區","杉林區","內門區","茂林區","桃源區",
-             "那瑪夏區"],
-  "桃園市": ["桃園區","中壢區","平鎮區","八德區","楊梅區","蘆竹區",
-             "大溪區","龍潭區","龜山區","大園區","觀音區","新屋區",
-             "復興區"],
-  "新竹市": ["東區","北區","香山區"],
-  "新竹縣": ["竹北市","湖口鄉","新豐鄉","新埔鎮","關西鎮","芎林鄉",
-             "寶山鄉","竹東鎮","五峰鄉","橫山鄉","尖石鄉","北埔鄉","峨眉鄉"],
-  "苗栗縣": ["苗栗市","頭份市","竹南鎮","後龍鎮","通霄鎮","苑裡鎮",
-             "造橋鄉","頭屋鄉","公館鄉","大湖鄉","泰安鄉","銅鑼鄉",
-             "三義鄉","西湖鄉","卓蘭鎮","三灣鄉","南庄鄉","獅潭鄉"],
-  "彰化縣": ["彰化市","鹿港鎮","和美鎮","線西鄉","伸港鄉","福興鄉",
-             "秀水鄉","花壇鄉","芬園鄉","員林市","溪湖鎮","田中鎮",
-             "大村鄉","埔鹽鄉","埔心鄉","永靖鄉","社頭鄉","二水鄉",
-             "北斗鎮","二林鎮","田尾鄉","埤頭鄉","芳苑鄉","大城鄉",
-             "竹塘鄉","溪州鄉"],
-  "嘉義市": ["東區","西區"],
-  "嘉義縣": ["太保市","朴子市","布袋鎮","大林鎮","民雄鄉","溪口鄉",
-             "新港鄉","六腳鄉","東石鄉","義竹鄉","鹿草鄉","水上鄉",
-             "中埔鄉","竹崎鄉","梅山鄉","番路鄉","大埔鄉","阿里山鄉"],
-  "屏東縣": ["屏東市","潮州鎮","東港鎮","恆春鎮","萬丹鄉","長治鄉",
-             "麟洛鄉","九如鄉","里港鄉","鹽埔鄉","高樹鄉","萬巒鄉",
-             "內埔鄉","竹田鄉","新埤鄉","枋寮鄉","新園鄉","崁頂鄉",
-             "林邊鄉","南州鄉","佳冬鄉","琉球鄉","車城鄉","滿州鄉",
-             "枋山鄉","三地門鄉","霧台鄉","瑪家鄉","泰武鄉","來義鄉",
-             "春日鄉","獅子鄉","牡丹鄉"],
-  "宜蘭縣": ["宜蘭市","羅東鎮","蘇澳鎮","頭城鎮","礁溪鄉","壯圍鄉",
-             "員山鄉","冬山鄉","五結鄉","三星鄉","大同鄉","南澳鄉"],
-  "花蓮縣": ["花蓮市","鳳林鎮","玉里鎮","新城鄉","吉安鄉","壽豐鄉",
-             "光復鄉","豐濱鄉","瑞穗鄉","富里鄉","秀林鄉","萬榮鄉","卓溪鄉"],
-  "台東縣": ["台東市","成功鎮","關山鎮","卑南鄉","鹿野鄉","池上鄉",
-             "東河鄉","長濱鄉","太麻里鄉","大武鄉","綠島鄉","海端鄉",
-             "延平鄉","金峰鄉","達仁鄉","蘭嶼鄉"],
-  "基隆市": ["仁愛區","信義區","中正區","中山區","安樂區","暖暖區","七堵區"],
+  "台中市":["中區","東區","南區","西區","北區","西屯區","南屯區","北屯區","豐原區","大里區","太平區","霧峰區","烏日區","潭子區","大雅區","神岡區","后里區","石岡區","東勢區","和平區","新社區","沙鹿區","龍井區","梧棲區","清水區","大甲區","外埔區","大安區"],
+  "台北市":["中正區","大同區","中山區","松山區","大安區","信義區","萬華區","文山區","南港區","內湖區","士林區","北投區"],
+  "新北市":["板橋區","三重區","中和區","永和區","新莊區","新店區","樹林區","鶯歌區","三峽區","淡水區","汐止區","瑞芳區","土城區","蘆洲區","五股區","泰山區","林口區","深坑區","石碇區","坪林區","三芝區","石門區","八里區","平溪區","雙溪區","貢寮區","金山區","萬里區","烏來區"],
+  "台南市":["中西區","東區","南區","北區","安平區","安南區","永康區","歸仁區","新化區","左鎮區","玉井區","楠西區","南化區","仁德區","關廟區","龍崎區","官田區","麻豆區","佳里區","西港區","七股區","將軍區","學甲區","北門區","新營區","後壁區","白河區","東山區","六甲區","下營區","柳營區","鹽水區","善化區","大內區","山上區","新市區","安定區"],
+  "高雄市":["楠梓區","左營區","鼓山區","三民區","鹽埕區","前金區","苓雅區","前鎮區","旗津區","小港區","鳳山區","林園區","大寮區","大樹區","大社區","仁武區","鳥松區","岡山區","橋頭區","燕巢區","田寮區","阿蓮區","路竹區","湖內區","茄萣區","永安區","彌陀區","梓官區","旗山區","美濃區","六龜區","甲仙區","杉林區","內門區","茂林區","桃源區","那瑪夏區"],
+  "桃園市":["桃園區","中壢區","平鎮區","八德區","楊梅區","蘆竹區","大溪區","龍潭區","龜山區","大園區","觀音區","新屋區","復興區"],
+  "新竹市":["東區","北區","香山區"],
+  "新竹縣":["竹北市","湖口鄉","新豐鄉","新埔鎮","關西鎮","芎林鄉","寶山鄉","竹東鎮","五峰鄉","橫山鄉","尖石鄉","北埔鄉","峨眉鄉"],
+  "苗栗縣":["苗栗市","頭份市","竹南鎮","後龍鎮","通霄鎮","苑裡鎮","造橋鄉","頭屋鄉","公館鄉","大湖鄉","泰安鄉","銅鑼鄉","三義鄉","西湖鄉","卓蘭鎮","三灣鄉","南庄鄉","獅潭鄉"],
+  "彰化縣":["彰化市","鹿港鎮","和美鎮","線西鄉","伸港鄉","福興鄉","秀水鄉","花壇鄉","芬園鄉","員林市","溪湖鎮","田中鎮","大村鄉","埔鹽鄉","埔心鄉","永靖鄉","社頭鄉","二水鄉","北斗鎮","二林鎮","田尾鄉","埤頭鄉","芳苑鄉","大城鄉","竹塘鄉","溪州鄉"],
+  "嘉義市":["東區","西區"],
+  "嘉義縣":["太保市","朴子市","布袋鎮","大林鎮","民雄鄉","溪口鄉","新港鄉","六腳鄉","東石鄉","義竹鄉","鹿草鄉","水上鄉","中埔鄉","竹崎鄉","梅山鄉","番路鄉","大埔鄉","阿里山鄉"],
+  "屏東縣":["屏東市","潮州鎮","東港鎮","恆春鎮","萬丹鄉","長治鄉","麟洛鄉","九如鄉","里港鄉","鹽埔鄉","高樹鄉","萬巒鄉","內埔鄉","竹田鄉","新埤鄉","枋寮鄉","新園鄉","崁頂鄉","林邊鄉","南州鄉","佳冬鄉","琉球鄉","車城鄉","滿州鄉","枋山鄉","三地門鄉","霧台鄉","瑪家鄉","泰武鄉","來義鄉","春日鄉","獅子鄉","牡丹鄉"],
+  "宜蘭縣":["宜蘭市","羅東鎮","蘇澳鎮","頭城鎮","礁溪鄉","壯圍鄉","員山鄉","冬山鄉","五結鄉","三星鄉","大同鄉","南澳鄉"],
+  "花蓮縣":["花蓮市","鳳林鎮","玉里鎮","新城鄉","吉安鄉","壽豐鄉","光復鄉","豐濱鄉","瑞穗鄉","富里鄉","秀林鄉","萬榮鄉","卓溪鄉"],
+  "台東縣":["台東市","成功鎮","關山鎮","卑南鄉","鹿野鄉","池上鄉","東河鄉","長濱鄉","太麻里鄉","大武鄉","綠島鄉","海端鄉","延平鄉","金峰鄉","達仁鄉","蘭嶼鄉"],
+  "基隆市":["仁愛區","信義區","中正區","中山區","安樂區","暖暖區","七堵區"],
 };
 
 let selectedCity = "台中市";
 let selectedDistricts = new Set();
 
 function initDistrictFilter(){
-  // Build city dropdown
   const sel = document.getElementById("citySelect");
-  sel.innerHTML = Object.keys(CITY_DISTRICTS).map(city=>
-    `<option value="${city}" ${city===selectedCity?"selected":""}>${city}</option>`
-  ).join("");
+  sel.innerHTML = Object.keys(CITY_DISTRICTS)
+    .map(city=>`<option value="${city}" ${city===selectedCity?"selected":""}>${city}</option>`)
+    .join("");
   renderDistrictChips();
 }
-
 function onCityChange(){
-  const sel = document.getElementById("citySelect");
-  selectedCity = sel.value;
+  selectedCity = document.getElementById("citySelect").value;
   selectedDistricts.clear();
   renderDistrictChips();
   App.filter(); updateFilterPreview();
 }
-
 function renderDistrictChips(){
   const g = document.getElementById("districtGrid");
-  const districts = CITY_DISTRICTS[selectedCity] || [];
-  g.innerHTML = districts.map(d=>
-    `<button class="dchip ${selectedDistricts.has(d)?"on":""}" data-d="${d}" onclick="toggleDistrict(this,'${d}')">${d}</button>`
+  g.innerHTML = (CITY_DISTRICTS[selectedCity]||[]).map(d=>
+    `<button class="dchip${selectedDistricts.has(d)?" on":""}" data-d="${d}" onclick="toggleDistrict(this,'${d}')">${d}</button>`
   ).join("");
 }
-
 function toggleDistrict(el,d){
-  selectedDistricts.has(d) ? selectedDistricts.delete(d) : selectedDistricts.add(d);
-  el.classList.toggle("on", selectedDistricts.has(d));
+  selectedDistricts.has(d)?selectedDistricts.delete(d):selectedDistricts.add(d);
+  el.classList.toggle("on",selectedDistricts.has(d));
   App.filter(); updateFilterPreview();
 }
 function selectAllDistricts(){
@@ -1031,9 +1048,9 @@ function clearDistricts(){
   App.filter(); updateFilterPreview();
 }
 function updateFilterPreview(){
-  const el = document.getElementById("filterTagsPreview");
-  const tags = [];
-  if(selectedDistricts.size>0 && selectedDistricts.size<=2)
+  const el=document.getElementById("filterTagsPreview");
+  const tags=[];
+  if(selectedDistricts.size>0&&selectedDistricts.size<=2)
     [...selectedDistricts].forEach(d=>tags.push(`<span class="ftag">${selectedCity}${d}</span>`));
   else if(selectedDistricts.size>2)
     tags.push(`<span class="ftag">${selectedCity} ${selectedDistricts.size}區</span>`);
@@ -1045,14 +1062,14 @@ function updateFilterPreview(){
 }
 function toggleFilter(){
   const body=document.getElementById("filterBody"),icon=document.getElementById("filterIcon");
-  const isOpen=body.style.display!=="none";
-  body.style.display=isOpen?"none":"flex";
-  icon.classList.toggle("open",!isOpen);
+  const open=body.style.display!=="none";
+  body.style.display=open?"none":"flex";
+  icon.classList.toggle("open",!open);
 }
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   STORE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   LOCAL STORAGE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 const Store={
   K:{l:"rqv5_lst",r:"rqv5_refs"},
   get(k){try{return JSON.parse(localStorage.getItem(k)||"null")}catch{return null}},
@@ -1063,480 +1080,408 @@ const Store={
   saveRefs(a){this.set(this.K.r,a)},
 };
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   OFFLINE GEOCODING — 內建行政區座標表
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-const TW_COORDS={
-  "台中市中區":[24.1435,120.6836],"台中市東區":[24.1372,120.6950],"台中市南區":[24.1200,120.6793],
-  "台中市西區":[24.1500,120.6660],"台中市北區":[24.1580,120.6840],"台中市北屯區":[24.1920,120.6820],
-  "台中市南屯區":[24.1388,120.6441],"台中市西屯區":[24.1750,120.6350],"台中市豐原區":[24.2527,120.7188],
-  "台中市大里區":[24.1011,120.6793],"台中市太平區":[24.1280,120.7044],"台中市霧峰區":[24.0660,120.7100],
-  "台中市烏日區":[24.0880,120.6401],"台中市潭子區":[24.2100,120.7050],"台中市大雅區":[24.2290,120.6448],
-  "台中市神岡區":[24.2617,120.6625],"台中市后里區":[24.3040,120.7050],"台中市石岡區":[24.2780,120.7420],
-  "台中市東勢區":[24.2580,120.8240],"台中市和平區":[24.3590,121.0820],"台中市新社區":[24.2280,120.8050],
-  "台中市沙鹿區":[24.2268,120.5801],"台中市龍井區":[24.1740,120.5565],"台中市梧棲區":[24.2520,120.5266],
-  "台中市清水區":[24.2660,120.5628],"台中市大甲區":[24.3477,120.6220],"台中市外埔區":[24.3193,120.6408],
-  "台中市大安區":[24.3870,120.6290],
-  "台北市中正區":[25.0329,121.5197],"台北市大同區":[25.0630,121.5130],"台北市中山區":[25.0690,121.5330],
-  "台北市松山區":[25.0580,121.5770],"台北市大安區":[25.0260,121.5430],"台北市信義區":[25.0330,121.5650],
-  "台北市萬華區":[25.0380,121.4990],"台北市文山區":[24.9880,121.5700],"台北市南港區":[25.0550,121.6070],
-  "台北市內湖區":[25.0830,121.5870],"台北市士林區":[25.0930,121.5250],"台北市北投區":[25.1320,121.4990],
-  "新北市板橋區":[25.0120,121.4630],"新北市三重區":[25.0620,121.4880],"新北市中和區":[24.9950,121.4940],
-  "新北市永和區":[25.0150,121.5170],"新北市新莊區":[25.0430,121.4490],"新北市新店區":[24.9680,121.5380],
-  "新北市淡水區":[25.1700,121.4430],
-  "高雄市三民區":[22.6490,120.3180],"高雄市前鎮區":[22.5870,120.3280],"高雄市鹽埕區":[22.6240,120.2870],
-  "高雄市苓雅區":[22.6230,120.3180],"高雄市新興區":[22.6320,120.3030],"高雄市左營區":[22.6900,120.2980],
-  "高雄市鳳山區":[22.6270,120.3570],
-  "台南市中西區":[22.9970,120.1970],"台南市東區":[22.9890,120.2200],"台南市南區":[22.9770,120.1900],
-  "台南市北區":[23.0110,120.2040],"台南市安平區":[22.9920,120.1680],"台南市安南區":[23.0340,120.1780],
-  "桃園市桃園區":[24.9932,121.3010],"桃園市中壢區":[24.9654,121.2247],
-  "台北市":[25.0478,121.5319],"台中市":[24.1477,120.6736],"台南市":[22.9999,120.2270],
-  "高雄市":[22.6273,120.3014],"新北市":[25.0169,121.4627],"桃園市":[24.9936,121.3010],
-  "新竹市":[24.8066,120.9686],"嘉義市":[23.4801,120.4491],"基隆市":[25.1324,121.7424],
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   GEOCODING  (Google → Nominatim fallback)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const TW_FALLBACK={
+  "台中市北區":[24.1580,120.6840],"台中市西屯區":[24.1750,120.6350],
+  "台中市南屯區":[24.1388,120.6441],"台中市北屯區":[24.1920,120.6820],
+  "台中市東區":[24.1372,120.6950],"台中市南區":[24.1200,120.6793],
+  "台中市西區":[24.1500,120.6660],"台中市中區":[24.1435,120.6836],
+  "台北市":[25.0478,121.5319],"台中市":[24.1477,120.6736],
+  "台南市":[22.9999,120.2270],"高雄市":[22.6273,120.3014],
+  "新北市":[25.0169,121.4627],"桃園市":[24.9936,121.3010],
 };
 
-// ── 地址正規化 ────────────────────────────────────────────────────────────
 function normalizeAddr(addr){
   return addr.trim()
-    .replace(/^\d{3,6}\s*/,"")   // 移除郵遞區號
-    .replace(/臺/g,"台")          // 臺→台
-    .replace(/[，、。,]/g," ")    // 全形標點→空格
+    .replace(/^\d{3,6}\s*/,"")
+    .replace(/臺/g,"台")
+    .replace(/[，、。,]/g," ")
     .replace(/\s+/g," ")
     .trim();
 }
 
-// ── Google Maps Geocoding API Key ───────────────────────────────────────
-// 申請後填入 Key，留空則使用 Nominatim 備援
-const GOOGLE_API_KEY = "AIzaSyD_9Ac5t7gn3zbsaZ-NNo1Pcb_xU-et4t4";
-
-// ── Nominatim throttle ───────────────────────────────────────────────────
-let _lastGeoTime = 0;
+let _nominatimLast=0;
 
 async function geocodeAddr(addr){
   if(!addr.trim()) return null;
-  const clean = normalizeAddr(addr);
+  const clean=normalizeAddr(addr);
 
-  // ── 優先使用 Google Maps Geocoding API（精確）──────────────────────────
-  if(GOOGLE_API_KEY){
+  // ── Google Geocoding（精確，優先）──────────────────────────────────────
+  try{
+    const url="https://maps.googleapis.com/maps/api/geocode/json"
+      +"?address="+encodeURIComponent(clean)
+      +"&region=tw&language=zh-TW&key="+GOOGLE_API_KEY;
+    const ctrl=new AbortController();
+    const tid=setTimeout(()=>ctrl.abort(),8000);
+    const res=await fetch(url,{signal:ctrl.signal});
+    clearTimeout(tid);
+    if(res.ok){
+      const d=await res.json();
+      if(d.status==="OK"&&d.results[0]){
+        const r=d.results[0];
+        return{lat:r.geometry.location.lat, lng:r.geometry.location.lng,
+               display:r.formatted_address, approximate:false};
+      }
+    }
+  }catch(e){console.warn("Google geocode:",e.message);}
+
+  // ── Nominatim 備援（GitHub Pages 可用，本機 file:// 不可用）────────────
+  const wait=Math.max(0,1100-(Date.now()-_nominatimLast));
+  if(wait>0) await new Promise(r=>setTimeout(r,wait));
+  _nominatimLast=Date.now();
+  for(const q of [clean+" 台灣", clean]){
     try{
-      const url = "https://maps.googleapis.com/maps/api/geocode/json"
-        + "?address=" + encodeURIComponent(clean)
-        + "&region=tw"
-        + "&language=zh-TW"
-        + "&key=" + GOOGLE_API_KEY;
-      const controller = new AbortController();
-      const tid = setTimeout(()=>controller.abort(), 6000);
-      const res = await fetch(url, {signal:controller.signal});
+      const url="https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=tw&q="+encodeURIComponent(q);
+      const ctrl=new AbortController();
+      const tid=setTimeout(()=>ctrl.abort(),6000);
+      const res=await fetch(url,{signal:ctrl.signal});
       clearTimeout(tid);
-      const data = await res.json();
-      if(data.status==="OK" && data.results[0]){
-        const r = data.results[0];
-        const loc = r.geometry.location;
-        return {
-          lat: loc.lat, lng: loc.lng,
-          display: r.formatted_address,
-          approximate: false
-        };
+      if(res.ok){
+        const d=await res.json();
+        if(d[0]) return{lat:+d[0].lat, lng:+d[0].lon,
+                        display:d[0].display_name.split(",").slice(0,3).join(","),
+                        approximate:false};
       }
-    }catch(e){ console.warn("Google Geocoding failed:", e.message); }
+    }catch(e){console.warn("Nominatim:",e.message);}
   }
 
-  // ── 備援：Nominatim（需要 HTTPS 環境，本機 file:// 無效）──────────────
-  // 節流：確保每次請求間隔至少 1100ms（Nominatim 政策）
-  const now = Date.now();
-  const wait = Math.max(0, 1100 - (now - _lastGeoTime));
-  if(wait > 0) await new Promise(r => setTimeout(r, wait));
-  _lastGeoTime = Date.now();
-
-  // 依序嘗試不同格式
-  const queries = [
-    clean + " 台灣",
-    clean,
-  ];
-
-  for(const q of queries){
-    try{
-      const url = "https://nominatim.openstreetmap.org/search"
-        + "?format=json&limit=1&addressdetails=1"
-        + "&countrycodes=tw"
-        + "&q=" + encodeURIComponent(q);
-      // Promise.race: 相容所有瀏覽器的超時機制（AbortSignal.timeout 部分瀏覽器不支援）
-      const controller = new AbortController();
-      const timeoutId = setTimeout(()=>controller.abort(), 8000);
-      let res;
-      try {
-        res = await fetch(url, {
-          headers: { "Accept": "application/json" },
-          signal: controller.signal
-        });
-      } finally {
-        clearTimeout(timeoutId);
-      }
-      if(!res.ok) continue;
-      const data = await res.json();
-      if(data && data[0]){
-        const r = data[0];
-        return {
-          lat: parseFloat(r.lat),
-          lng: parseFloat(r.lon),
-          display: r.display_name.split(",").slice(0,3).join(",").trim(),
-          approximate: false
-        };
-      }
-    } catch(e){
-      console.warn("Nominatim error:", e.message);
-    }
-  }
-
-  // Nominatim 失敗時，降級到行政區近似座標
-  const a = clean;
-  const keys = Object.keys(TW_COORDS).sort((x,y)=>y.length-x.length);
-  for(const k of keys){
-    if(a.includes(k)){
-      const [lat,lng] = TW_COORDS[k];
-      return { lat, lng, display: k+"（行政區近似，建議重新定位）", approximate: true };
-    }
+  // ── 最終備援：行政區座標表 ────────────────────────────────────────────
+  const a=clean;
+  for(const[k,[lat,lng]] of Object.entries(TW_FALLBACK)){
+    if(a.includes(k)) return{lat,lng,display:k+"（行政區中心）",approximate:true};
   }
   return null;
 }
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   DISTANCE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   DISTANCE MODULE
-   Google Distance Matrix API + Haversine fallback
-   Cache: avoid duplicate API calls
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-const Dist = {
-  // ── Haversine（備援用）──────────────────────────────────────────────────
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   DISTANCE  (Google Distance Matrix + cache)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const Dist={
+  _cache:{},
+  _key(oLat,oLng,dLat,dLng,mode){
+    return `${oLat.toFixed(5)},${oLng.toFixed(5)}|${dLat.toFixed(5)},${dLng.toFixed(5)}|${mode}`;
+  },
+
+  // Haversine 直線距離（km）備用
   hav(a,b,c,d){
     const R=6371,dL=(c-a)*Math.PI/180,dG=(d-b)*Math.PI/180;
     const x=Math.sin(dL/2)**2+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dG/2)**2;
     return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
   },
 
-  // ── 本地估算備援（無 API Key 時使用）──────────────────────────────────
-  ROAD:1.3, SP:{drive:[25,15], moto:[28,18], walk:[5,4.5]},
-  localCalc(l, refs, mode){
-    if(!refs.length||!l.lat) return null;
-    return refs.filter(r=>r.lat&&r.lng).map(r=>{
-      const s=this.hav(l.lat,l.lng,r.lat,r.lng), km=s*this.ROAD;
-      const [op,pk]=this.SP[mode]||this.SP.drive;
-      const tMin=Math.round(km/op*60), tMax=Math.round(km/pk*60);
-      return {name:r.name, color:r.color, km:+km.toFixed(1),
-              time:{min:Math.min(tMin,tMax), max:Math.max(tMin,tMax)}, source:"estimate"};
-    });
-  },
+  // 本地估算速度 [離峰, 尖峰] km/h（Google 無法使用時備援）
+  SP:{drive:[25,15], moto:[28,18], walk:[5,4.5]},
 
-  // ── Google Distance Matrix API ─────────────────────────────────────────
-  // 快取：key = "lat,lng|lat,lng|mode"
-  _cache: {},
-  _cacheKey(oLat,oLng,dLat,dLng,mode){ return `${oLat.toFixed(5)},${oLng.toFixed(5)}|${dLat.toFixed(5)},${dLng.toFixed(5)}|${mode}`; },
-
-  // Google 模式對應（機車用 driving + 係數修正）
-  _googleMode(mode){ return mode==="walk"?"walking":"driving"; },
-
-  async fetchGoogle(oLat,oLng,dLat,dLng,mode){
-    if(!GOOGLE_API_KEY) return null;
-    const cKey = this._cacheKey(oLat,oLng,dLat,dLng,mode);
-    if(this._cache[cKey]) return this._cache[cKey];
+  // Google Distance Matrix 單次查詢
+  async _fetch(oLat,oLng,dLat,dLng,mode){
+    const key=this._key(oLat,oLng,dLat,dLng,mode);
+    if(this._cache[key]) return this._cache[key];
+    // 機車沿用開車路線，速度修正
+    const gMode=mode==="walk"?"walking":"driving";
     try{
-      const gMode = this._googleMode(mode);
-      const url = "https://maps.googleapis.com/maps/api/distancematrix/json"
-        + "?origins="      + oLat + "," + oLng
-        + "&destinations=" + dLat + "," + dLng
-        + "&mode="         + gMode
-        + "&language=zh-TW"
-        + "&key="          + GOOGLE_API_KEY;
-      const controller = new AbortController();
-      const tid = setTimeout(()=>controller.abort(), 6000);
-      const res = await fetch(url, {signal:controller.signal});
+      const url="https://maps.googleapis.com/maps/api/distancematrix/json"
+        +"?origins="+oLat+","+oLng
+        +"&destinations="+dLat+","+dLng
+        +"&mode="+gMode
+        +"&language=zh-TW"
+        +"&key="+GOOGLE_API_KEY;
+      const ctrl=new AbortController();
+      const tid=setTimeout(()=>ctrl.abort(),8000);
+      const res=await fetch(url,{signal:ctrl.signal});
       clearTimeout(tid);
-      const data = await res.json();
-      const el = data?.rows?.[0]?.elements?.[0];
-      if(!el || el.status!=="OK") return null;
-      let km = el.distance.value / 1000;           // 公尺 → 公里
-      let sec = el.duration.value;                  // 秒
-      // 機車修正：路線距離相同但速度較快（不塞車）約 1.15 倍速
-      if(mode==="moto"){ sec = Math.round(sec / 1.15); }
-      const result = {
-        km: +km.toFixed(1),
-        time: { min: Math.round(sec/60), max: Math.round(sec*1.35/60) }, // min=離峰, max=尖峰
-        source: "google"
+      if(!res.ok) return null;
+      const data=await res.json();
+      const el=data?.rows?.[0]?.elements?.[0];
+      if(!el||el.status!=="OK") return null;
+      const km=+(el.distance.value/1000).toFixed(1);
+      let sec=el.duration.value;
+      // 機車：開車路線 ÷ 1.15（台灣機車比開車平均快約 15%）
+      if(mode==="moto") sec=Math.round(sec/1.15);
+      const result={
+        km,
+        // 離峰=Google回傳時間，尖峰=×1.4（台灣市區尖峰通常慢 40%）
+        time:{min:Math.round(sec/60), max:Math.round(sec*1.4/60)},
+        source:"google"
       };
-      this._cache[cKey] = result;
+      this._cache[key]=result;
       return result;
-    }catch(e){ console.warn("Distance Matrix error:", e.message); return null; }
+    }catch(e){console.warn("DistMatrix:",e.message);return null;}
   },
 
-  // ── 批次計算所有 ref 距離（async）────────────────────────────────────
-  async calcAsync(l, refs, mode){
-    if(!refs.length || !l.lat) return null;
-    const active = refs.filter(r=>r.lat&&r.lng);
-    if(!active.length) return null;
-    const results = await Promise.all(active.map(async r=>{
-      const g = await this.fetchGoogle(l.lat,l.lng,r.lat,r.lng,mode);
-      if(g) return {name:r.name, color:r.color, km:g.km, time:g.time, source:"google"};
-      // 備援：本地估算
-      const s=this.hav(l.lat,l.lng,r.lat,r.lng), km=+(s*this.ROAD).toFixed(1);
-      const [op,pk]=this.SP[mode]||this.SP.drive;
-      return {name:r.name, color:r.color, km,
-              time:{min:Math.round(km/op*60), max:Math.round(km/pk*60)}, source:"estimate"};
-    }));
-    return results;
-  },
-
-  // ── 同步版（快取命中時用，初次渲染備援）────────────────────────────────
-  calc(l, refs, mode){
+  // 同步取值（快取命中即時返回，否則用本地估算並背景呼叫 API）
+  calc(l,refs,mode){
     if(!refs.length||!l.lat) return null;
-    const active = refs.filter(r=>r.lat&&r.lng);
+    const active=refs.filter(r=>r.lat&&r.lng);
     if(!active.length) return null;
     return active.map(r=>{
-      const cKey = this._cacheKey(l.lat,l.lng,r.lat,r.lng,mode);
-      if(this._cache[cKey]){
-        const g = this._cache[cKey];
-        return {name:r.name, color:r.color, km:g.km, time:g.time, source:"google"};
+      const key=this._key(l.lat,l.lng,r.lat,r.lng,mode);
+      if(this._cache[key]){
+        const g=this._cache[key];
+        return{name:r.name,color:r.color,km:g.km,time:g.time,source:"google"};
       }
-      // 快取未命中 → 本地估算，並在背景呼叫 API 更新
-      const s=this.hav(l.lat,l.lng,r.lat,r.lng), km=+(s*this.ROAD).toFixed(1);
+      // 快取未命中：本地估算，並在背景拉 Google 資料
+      const straight=this.hav(l.lat,l.lng,r.lat,r.lng);
+      const km=+(straight*1.3).toFixed(1);
       const [op,pk]=this.SP[mode]||this.SP.drive;
-      // 觸發背景更新（不等待）
-      if(GOOGLE_API_KEY) this.fetchGoogle(l.lat,l.lng,r.lat,r.lng,mode).then(()=>{});
-      return {name:r.name, color:r.color, km,
-              time:{min:Math.round(km/op*60), max:Math.round(km/pk*60)}, source:"estimate"};
+      this._fetch(l.lat,l.lng,r.lat,r.lng,mode); // 背景呼叫，不 await
+      return{name:r.name,color:r.color,km,
+             time:{min:Math.round(km/op*60),max:Math.round(km/pk*60)},source:"estimate"};
     });
   },
 
-  // ── 預熱快取：listings + refs 載入後批次呼叫 API ──────────────────────
-  async warmCache(listings, refs, mode){
-    if(!GOOGLE_API_KEY) return;
-    const active = refs.filter(r=>r.lat&&r.lng);
+  // 批次預熱快取（filter 後呼叫）
+  async warm(listings,refs,mode){
+    const active=refs.filter(r=>r.lat&&r.lng);
     if(!active.length) return;
-    // 有座標的 listings，並發但限制並發數（每批 5 個）
-    const withLat = listings.filter(l=>l.lat);
-    const BATCH = 5;
-    for(let i=0; i<withLat.length; i+=BATCH){
-      const batch = withLat.slice(i, i+BATCH);
-      await Promise.all(batch.map(l=>
-        Promise.all(active.map(r=>this.fetchGoogle(l.lat,l.lng,r.lat,r.lng,mode)))
-      ));
-      // 每批完成後重新渲染，讓使用者看到即時更新
-      if(i>0) App.rerender();
+    const withLat=listings.filter(l=>l.lat);
+    const BATCH=4;
+    for(let i=0;i<withLat.length;i+=BATCH){
+      const slice=withLat.slice(i,i+BATCH);
+      await Promise.all(
+        slice.flatMap(l=>active.map(r=>this._fetch(l.lat,l.lng,r.lat,r.lng,mode)))
+      );
+      App.rerender(); // 每批完成即時更新卡片
     }
-    App.rerender();
   }
 };
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    REFERENCE LOCATIONS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 const REF_COLORS=["#A87060","#B08090","#7A8CA0","#7B8C7A","#B09870"];
 const Refs={
   _list:[],_nid:10,
-  init(){this._list=Store.refs();this._nid=Math.max(...this._list.map(r=>r.id),9)+1;this.render()},
-  save(){Store.saveRefs(this._list)},
-  active(){return this._list.filter(r=>r.lat&&r.lng)},
+  init(){this._list=Store.refs();this._nid=Math.max(...this._list.map(r=>r.id),9)+1;this.render();},
+  save(){Store.saveRefs(this._list);},
+  active(){return this._list.filter(r=>r.lat&&r.lng);},
   add(){
-    this._list.push({id:this._nid++,name:"地點"+(this._list.length+1),address:"",lat:null,lng:null,color:REF_COLORS[this._list.length%REF_COLORS.length]});
+    this._list.push({id:this._nid++,name:"地點"+(this._list.length+1),
+      address:"",lat:null,lng:null,color:REF_COLORS[this._list.length%REF_COLORS.length]});
     this.save();this.render();
   },
-  remove(id){this._list=this._list.filter(r=>r.id!==id);this.save();this.render();MapMod.renderRefs(this.active());App.filter()},
-  set(id,f,v){const r=this._list.find(r=>r.id===id);if(r)r[f]=v},
+  remove(id){this._list=this._list.filter(r=>r.id!==id);this.save();this.render();MapMod.renderRefs(this.active());App.filter();},
+  set(id,f,v){const r=this._list.find(r=>r.id===id);if(r)r[f]=v;},
   render(){
     const el=document.getElementById("refList");
-    if(!this._list.length){el.innerHTML='<div style="font-size:11px;color:var(--t4);padding:2px 0">尚未設定參考地點</div>';return}
+    if(!this._list.length){el.innerHTML='<div style="font-size:11px;color:var(--t4);padding:2px 0">尚未設定參考地點</div>';return;}
     el.innerHTML=this._list.map(r=>`
       <div class="ref-item">
         <div class="ref-dot" style="background:${r.color}"></div>
         <input class="ref-name-in" value="${r.name}" placeholder="名稱"
           oninput="Refs.set(${r.id},'name',this.value);Refs.save()">
-        <input class="ref-addr-in" id="refaddr-${r.id}" value="${r.address||''}" placeholder="輸入地址（離開欄位自動定位）"
+        <input class="ref-addr-in" id="refaddr-${r.id}" value="${r.address||""}"
+          placeholder="輸入地址，離開欄位自動定位"
           oninput="Refs.set(${r.id},'address',this.value)"
-          onblur="Refs.autoGeocode(${r.id})"
+          onblur="Refs.autoGeo(${r.id})"
           onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur()}">
-        <button class="btn-geo-ref ${r.lat?'geocoded':''}" onclick="Refs.autoGeocode(${r.id})" title="${r.lat?('已定位: '+r.address):'點此定位'}">
-          ${r.lat?"✓":"📍"}
-        </button>
+        <button class="btn-geo-ref ${r.lat?'geocoded':''}"
+          onclick="Refs.autoGeo(${r.id})">${r.lat?"✓":"📍"}</button>
         <button class="btn-del-ref" onclick="Refs.remove(${r.id})">×</button>
       </div>`).join("");
   },
-  async autoGeocode(id){
+  async autoGeo(id){
     const r=this._list.find(r=>r.id===id);
     if(!r) return;
     const input=document.getElementById("refaddr-"+id);
-    const addr=(input?input.value:r.address||"").trim();
+    const addr=((input?input.value:"")||r.address||"").trim();
     if(!addr) return;
-    if(r.lat&&r.address===addr) return; // already geocoded same addr
+    if(r.lat&&r.address===addr) return; // 未改變，跳過
     const bar=document.getElementById("geoBar"),msg=document.getElementById("geoMsg");
-    const btn=document.querySelector(`button[onclick="Refs.autoGeocode(${id})"]`);
+    const btn=document.querySelector(`button[onclick="Refs.autoGeo(${id})"]`);
     if(btn){btn.textContent="…";btn.disabled=true;}
     bar.classList.add("on"); msg.textContent="定位「"+addr+"」中...";
     const result=await geocodeAddr(addr);
     if(result){
-      r.lat=result.lat; r.lng=result.lng; r.address=addr;
-      this.save(); this.render();
+      r.lat=result.lat;r.lng=result.lng;r.address=addr;
+      this.save();this.render();
       MapMod.renderRefs(this.active());
       App.filter();
-      if(MapMod._ready&&MapMod._map) MapMod._map.flyTo([result.lat,result.lng],14,{animate:true,duration:0.8});
-      msg.textContent = result.approximate
-        ? "⚠ 近似位置："+result.display
-        : "✓ 精確定位："+result.display;
-      setTimeout(()=>bar.classList.remove("on"),3000);
+      if(MapMod._ready&&MapMod._map)
+        MapMod._map.flyTo([result.lat,result.lng],14,{animate:true,duration:0.8});
+      msg.textContent=(result.approximate?"⚠ 近似：":"✓ 已定位：")+result.display;
     } else {
       if(btn){btn.textContent="📍";btn.disabled=false;}
-      msg.textContent="⚠ 找不到地址。請確認格式：台中市北區育德路2號（需含縣市區）";
-      setTimeout(()=>bar.classList.remove("on"),4000);
+      msg.textContent="⚠ 找不到地址，請確認格式，例如：台中市北區育德路2號";
     }
+    setTimeout(()=>bar.classList.remove("on"),3500);
   }
 };
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    MAP
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 const MapMod={
   _map:null,_lm:{},_rm:[],_ready:false,
   init(){if(window.innerWidth>768)this._doInit();},
   _doInit(){
-    if(this._ready)return;
+    if(this._ready) return;
     this._ready=true;
     this._map=L.map("map",{center:[24.155,120.66],zoom:12});
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",{attribution:"© OpenStreetMap © CARTO",subdomains:"abcd",maxZoom:20}).addTo(this._map);
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+      {attribution:"© OpenStreetMap © CARTO",subdomains:"abcd",maxZoom:20}).addTo(this._map);
   },
-  pinIcon(color){
-    const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36"><path d="M14 1C7.92 1 3 5.92 3 12c0 9.25 11 23 11 23S25 21.25 25 12C25 5.92 20.08 1 14 1z" fill="${color}" stroke="rgba(255,255,255,0.6)" stroke-width="1.5"/><circle cx="14" cy="12" r="4" fill="rgba(255,255,255,0.8)"/></svg>`;
-    return L.divIcon({html:svg,className:"",iconSize:[28,36],iconAnchor:[14,36],popupAnchor:[0,-36]});
+  _houseIcon(color){
+    const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36"><path d="M14 1C7.92 1 3 5.92 3 12c0 9.25 11 23 11 23S25 21.25 25 12C25 5.92 20.08 1 14 1z" fill="${color}" stroke="rgba(255,255,255,0.7)" stroke-width="1.5"/><circle cx="14" cy="12" r="4" fill="rgba(255,255,255,0.85)"/></svg>`;
+    return L.divIcon({html:svg,className:"",iconSize:[28,36],iconAnchor:[14,36],popupAnchor:[0,-38]});
   },
-  refIcon(color){
-    const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="34" height="42" viewBox="0 0 34 42"><path d="M17 2C10.37 2 5 7.37 5 14c0 10.5 12 26 12 26S29 24.5 29 14C29 7.37 23.63 2 17 2z" fill="${color}" stroke="white" stroke-width="2"/><text x="17" y="18" text-anchor="middle" dominant-baseline="middle" font-size="14" fill="white">★</text></svg>`;
-    return L.divIcon({html:svg,className:"",iconSize:[34,42],iconAnchor:[17,42],popupAnchor:[0,-42]});
+  _starIcon(color){
+    const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="34" height="42" viewBox="0 0 34 42"><path d="M17 2C10.37 2 5 7.37 5 14c0 10.5 12 26 12 26S29 24.5 29 14C29 7.37 23.63 2 17 2z" fill="${color}" stroke="white" stroke-width="2"/><text x="17" y="18" text-anchor="middle" dominant-baseline="middle" font-size="15" fill="white">★</text></svg>`;
+    return L.divIcon({html:svg,className:"",iconSize:[34,42],iconAnchor:[17,42],popupAnchor:[0,-44]});
   },
   renderListings(listings,refs,mode){
-    if(!this._ready)return;
-    Object.values(this._lm).forEach(m=>this._map.removeLayer(m));this._lm={};
+    if(!this._ready) return;
+    Object.values(this._lm).forEach(m=>this._map.removeLayer(m));
+    this._lm={};
     listings.forEach(l=>{
-      if(!l.lat)return;
+      if(!l.lat) return;
       const isCrawl=["591","好房網","樂屋網"].includes(l.source);
       const color=isCrawl?"#7A8CA0":"#7B8C7A";
       const com=Dist.calc(l,refs,mode);
-      const km=com&&com[0]?com[0].km.toFixed(1)+" km":"";
+      const comLine=com&&com[0]
+        ?`<br>📍 ${com[0].km} km　${({drive:"🚗",moto:"🛵",walk:"🚶"})[mode]||"🚗"} 約 ${com[0].time.min}–${com[0].time.max} 分${com[0].source==="estimate"?" (估算)":""}`:"";
       const isMobile=window.innerWidth<=768;
       const detailBtn=isMobile
-        ? `<button class="pu-detail-btn" onclick="App.goToCard(${l.id})">查看詳情 →</button>`
-        : "";
-      const popup=`<div class="pu-name">🏠 ${l.name}</div>${l.price?`<div class="pu-price">NT$ ${Number(l.price).toLocaleString()} / 月</div>`:""}<div class="pu-meta">${l.address}${km?`<br>📍 ${com[0].km} km${GOOGLE_API_KEY?"":" (估算)"}（${com[0].time.min}–${com[0].time.max} 分${GOOGLE_API_KEY?"":" 估算"}）`:""}</div>${l.link?`<a class="pu-link" href="${l.link}" target="_blank">→ 查看來源 ↗</a>`:""}<div style="margin-top:8px">${detailBtn}</div>`;
-      const m=L.marker([l.lat,l.lng],{icon:this.pinIcon(color)}).addTo(this._map).bindPopup(popup,{maxWidth:260});
-      m.on("click",()=>{
-        // Mobile: stay on map, open popup — user taps "查看詳情" to go to list
-        // Desktop: highlight card in list
-        if(window.innerWidth>768) UI.highlightCard(l.id);
-      });
+        ?`<button class="pu-detail-btn" onclick="App.goToCard(${l.id})">查看詳情 →</button>`:"";
+      const popup=`<div class="pu-name">🏠 ${l.name}</div>
+        ${l.price?`<div class="pu-price">NT$ ${Number(l.price).toLocaleString()} / 月</div>`:""}
+        <div class="pu-meta">${l.address}${comLine}</div>
+        ${l.link?`<a class="pu-link" href="${l.link}" target="_blank">→ 查看來源 ↗</a>`:""}
+        <div style="margin-top:6px">${detailBtn}</div>`;
+      const m=L.marker([l.lat,l.lng],{icon:this._houseIcon(color)})
+        .addTo(this._map).bindPopup(popup,{maxWidth:260});
+      m.on("click",()=>{if(window.innerWidth>768) UI.highlightCard(l.id);});
       this._lm[l.id]=m;
     });
   },
   renderRefs(refs){
-    if(!this._ready)return;
+    if(!this._ready) return;
     this._rm.forEach(m=>this._map.removeLayer(m));this._rm=[];
     refs.forEach(r=>{
-      if(!r.lat||!r.lng)return;
-      const m=L.marker([r.lat,r.lng],{icon:this.refIcon(r.color)}).addTo(this._map)
+      if(!r.lat) return;
+      const m=L.marker([r.lat,r.lng],{icon:this._starIcon(r.color)})
+        .addTo(this._map)
         .bindPopup(`<div class="pu-ref">★ ${r.name}</div><div class="pu-meta">${r.address}</div>`,{maxWidth:180});
       this._rm.push(m);
     });
   },
-  flyOpen(id){if(!this._ready)return;const m=this._lm[id];if(m){this._map.flyTo(m.getLatLng(),Math.max(this._map.getZoom(),15),{animate:true,duration:.5});m.openPopup();}},
+  flyOpen(id){
+    if(!this._ready) return;
+    const m=this._lm[id];
+    if(m){this._map.flyTo(m.getLatLng(),Math.max(this._map.getZoom(),15),{animate:true,duration:.5});m.openPopup();}
+  },
 };
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   IMAGE UPLOAD
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   IMAGE UPLOAD  (compress to 800×600 JPEG)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 const ImgUpload={
   _imgs:[],
-  init(existing){
-    this._imgs=existing?[...existing]:[];
-    this.render();
-  },
-  // 壓縮圖片至最大 800x600、品質 0.75，避免 localStorage 超過上限
-  async compressImage(file){
+  init(existing){this._imgs=existing?[...existing]:[];this.render();},
+  async _compress(file){
     return new Promise(resolve=>{
-      const img = new Image();
-      const url = URL.createObjectURL(file);
-      img.onload = ()=>{
+      const img=new Image(), url=URL.createObjectURL(file);
+      img.onload=()=>{
         URL.revokeObjectURL(url);
-        const MAX_W=800, MAX_H=600;
-        let w=img.width, h=img.height;
-        if(w>MAX_W){ h=Math.round(h*MAX_W/w); w=MAX_W; }
-        if(h>MAX_H){ w=Math.round(w*MAX_H/h); h=MAX_H; }
-        const canvas=document.createElement("canvas");
-        canvas.width=w; canvas.height=h;
-        canvas.getContext("2d").drawImage(img,0,0,w,h);
-        resolve(canvas.toDataURL("image/jpeg", 0.75));
+        let w=img.width,h=img.height;
+        if(w>800){h=Math.round(h*800/w);w=800;}
+        if(h>600){w=Math.round(w*600/h);h=600;}
+        const cv=document.createElement("canvas");
+        cv.width=w;cv.height=h;
+        cv.getContext("2d").drawImage(img,0,0,w,h);
+        resolve(cv.toDataURL("image/jpeg",0.75));
       };
-      img.onerror = ()=>{ URL.revokeObjectURL(url); resolve(null); };
-      img.src = url;
+      img.onerror=()=>{URL.revokeObjectURL(url);resolve(null);};
+      img.src=url;
     });
   },
   async addFile(input){
-    const files=Array.from(input.files);
-    for(const file of files){
-      if(!file.type.startsWith("image/"))continue;
-      if(this._imgs.length>=4){alert("最多上傳 4 張圖片");break;}
-      const b64 = await this.compressImage(file);
+    for(const file of Array.from(input.files)){
+      if(!file.type.startsWith("image/")) continue;
+      if(this._imgs.length>=4){alert("最多上傳 4 張");break;}
+      const b64=await this._compress(file);
       if(b64) this._imgs.push(b64);
     }
-    input.value="";
-    this.render();
+    input.value="";this.render();
   },
   remove(i){this._imgs.splice(i,1);this.render();},
   render(){
-    const container=document.getElementById("imgPreviewArea");
-    if(!container)return;
-    container.innerHTML=this._imgs.map((src,i)=>`
+    const el=document.getElementById("imgPreviewArea");
+    if(!el) return;
+    el.innerHTML=this._imgs.map((src,i)=>`
       <div style="position:relative;width:80px;height:60px;border-radius:6px;overflow:hidden;border:1px solid var(--b1);flex-shrink:0">
         <img src="${src}" style="width:100%;height:100%;object-fit:cover">
-        <button onclick="ImgUpload.remove(${i})" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);border:none;color:#fff;border-radius:50%;width:18px;height:18px;font-size:11px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center">×</button>
+        <button onclick="ImgUpload.remove(${i})" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);border:none;color:#fff;border-radius:50%;width:18px;height:18px;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1">×</button>
       </div>`).join("")+
-      (this._imgs.length<4?`<label style="width:80px;height:60px;border-radius:6px;border:1px dashed var(--b2);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;color:var(--t3);font-size:11px;gap:3px;flex-shrink:0">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-        新增圖片
-        <input type="file" accept="image/*" multiple style="display:none" onchange="ImgUpload.addFile(this)">
-      </label>`:"");
+    (this._imgs.length<4?`<label style="width:80px;height:60px;border-radius:6px;border:1px dashed var(--b2);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;color:var(--t3);font-size:11px;gap:3px;flex-shrink:0">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+      新增圖片
+      <input type="file" accept="image/*" multiple style="display:none" onchange="ImgUpload.addFile(this)">
+    </label>`:"");
   },
   get(){return this._imgs.length?[...this._imgs]:null;}
 };
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   UI
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   UI  — card rendering
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 const UI={
-  timeAgo(ts){const d=(Date.now()-ts)/1000;if(d<60)return"剛剛";if(d<3600)return Math.round(d/60)+"分鐘前";if(d<86400)return Math.round(d/3600)+"小時前";return Math.round(d/86400)+"天前"},
-  highlightCard(id){document.querySelectorAll(".card").forEach(c=>c.classList.remove("active"));const el=document.querySelector(`.card[data-id="${id}"]`);if(el){el.classList.add("active");el.scrollIntoView({behavior:"smooth",block:"nearest"})}},
+  timeAgo(ts){
+    const d=(Date.now()-ts)/1000;
+    if(d<60) return"剛剛";
+    if(d<3600) return Math.round(d/60)+"分鐘前";
+    if(d<86400) return Math.round(d/3600)+"小時前";
+    return Math.round(d/86400)+"天前";
+  },
+  highlightCard(id){
+    document.querySelectorAll(".card").forEach(c=>c.classList.remove("active"));
+    const el=document.querySelector(`.card[data-id="${id}"]`);
+    if(el){el.classList.add("active");el.scrollIntoView({behavior:"smooth",block:"nearest"});}
+  },
   renderCards(listings,refs,mode){
     const empty=document.getElementById("emptyState"),cl=document.getElementById("cardList");
     empty.style.display=listings.length?"none":"flex";
-    if(!listings.length){cl.innerHTML="";return}
+    if(!listings.length){cl.innerHTML="";return;}
     const me={drive:"🚗",moto:"🛵",walk:"🚶"}[mode]||"🚗";
     cl.innerHTML=listings.map((l,i)=>{
       const com=Dist.calc(l,refs,mode);
       const isCrawl=["591","好房網","樂屋網"].includes(l.source);
       const imgSrc=l.images&&l.images.length?l.images[0]:null;
+      // ── image ──
       const imgHtml=imgSrc
-        ?`<div class="card-img${isCrawl?"":" manual-src"}"><img src="${imgSrc}" alt="" loading="lazy">${l.type?`<span class="card-img-type">${l.type}</span>`:""}<span class="card-img-source">${l.source}</span></div>`
-        :`<div class="card-img${isCrawl?"":" manual-src"}"><div class="card-img-placeholder"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><span>${isCrawl?"圖片待載入":"尚無圖片"}</span></div>${l.type?`<span class="card-img-type">${l.type}</span>`:""}<span class="card-img-source">${l.source}</span></div>`;
+        ?`<div class="card-img${isCrawl?"":" manual-src"}">
+            <img src="${imgSrc}" alt="" loading="lazy">
+            ${l.type?`<span class="card-img-type">${l.type}</span>`:""}
+            <span class="card-img-source">${l.source}</span>
+          </div>`
+        :`<div class="card-img${isCrawl?"":" manual-src"}">
+            <div class="card-img-placeholder">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              <span>${isCrawl?"圖片待載入":"尚無圖片"}</span>
+            </div>
+            ${l.type?`<span class="card-img-type">${l.type}</span>`:""}
+            <span class="card-img-source">${l.source}</span>
+          </div>`;
+      // ── commute ──
       const comHtml=com&&com.length?`<div class="commute">
-        ${com.map(d=>`<div class="crow">
-          <div class="cdot" style="background:${d.color}"></div>
-          <span class="clabel">${d.name}</span>
-          <span class="ckm">${d.km} km</span>
-          <span class="ctime">${me} 約 ${d.time.min}–${d.time.max} 分 ${d.source==="estimate"?'<span style="font-size:9px;color:var(--t4)">估算</span>':''}</span>
-        </div>`).join("")}
-      </div>`:"";
-      const wLbl={included:"含水費",meter:"水錶",fixed:`水費${l.waterAmt?l.waterAmt+"元":""}`};
-      const utilItems=[];
-      if(l.elec) utilItems.push(`<span class="util-chip">⚡<b>${l.elec}元/度</b></span>`);
-      if(l.water) utilItems.push(`<span class="util-chip">💧<b>${wLbl[l.water]||""}</b></span>`);
-      if(l.mgmt) utilItems.push(`<span class="util-chip">🏢<b>${Number(l.mgmt).toLocaleString()}元</b></span>`);
-      const utilHtml=utilItems.length?`<div class="util-row">${utilItems.join("")}</div>`:"";
+          ${com.map(d=>`<div class="crow">
+            <div class="cdot" style="background:${d.color}"></div>
+            <span class="clabel">${d.name}</span>
+            <span class="ckm">${d.km} km</span>
+            <span class="ctime">${me} 約 ${d.time.min}–${d.time.max} 分
+              ${d.source==="estimate"?'<span style="font-size:9px;color:var(--t4)"> 估算</span>':""}
+            </span>
+          </div>`).join("")}
+        </div>`:"";
+      // ── util chips ──
+      const wLbl={included:"含水費",meter:"水錶計費",fixed:`水費${l.waterAmt?l.waterAmt+"元":""}`};
+      const uc=[];
+      if(l.elec) uc.push(`<span class="util-chip">⚡<b>${l.elec}元/度</b></span>`);
+      if(l.water) uc.push(`<span class="util-chip">💧<b>${wLbl[l.water]||""}</b></span>`);
+      if(l.mgmt) uc.push(`<span class="util-chip">🏢<b>${Number(l.mgmt).toLocaleString()}元</b></span>`);
+      const utilHtml=uc.length?`<div class="util-row">${uc.join("")}</div>`:"";
+      // ── tags ──
       const tags=[];
       if(l.area) tags.push(`<span class="tag tag-neu">${l.area}坪</span>`);
       if(l.floor) tags.push(`<span class="tag tag-neu">${l.floor}F</span>`);
@@ -1547,17 +1492,37 @@ const UI={
       return `<div class="card" data-id="${l.id}" style="animation-delay:${Math.min(i,20)*12}ms" onclick="App.onCardClick(${l.id})">
         ${imgHtml}
         <div class="card-body">
-          <div class="card-top"><div class="card-title">${l.name}</div><span class="manual-pill">${l.source}</span></div>
-          <div class="card-price-row">${l.price?`<span class="price">NT$ ${Number(l.price).toLocaleString()}</span><span class="price-unit">/月</span>`:`<span class="no-price">租金未填</span>`}</div>
+          <div class="card-top">
+            <div class="card-title">${l.name}</div>
+            <span class="manual-pill">${l.source}</span>
+          </div>
+          <div class="card-price-row">
+            ${l.price?`<span class="price">NT$ ${Number(l.price).toLocaleString()}</span><span class="price-unit">/月</span>`:`<span class="no-price">租金未填</span>`}
+          </div>
           ${tags.length?`<div class="card-tags">${tags.join("")}</div>`:""}
           ${utilHtml}
           ${comHtml}
-          <div class="info-row"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg><span>${l.address}${!l.lat?' <span style="color:var(--warn);font-size:10px">未定位</span>':""}</span></div>
+          <div class="info-row">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            <span>${l.address}${!l.lat?' <span style="color:var(--warn);font-size:10px">（未定位）</span>':""}</span>
+          </div>
           ${l.contact?`<div class="info-row"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 014.17 12 19.79 19.79 0 011.1 3.43 2 2 0 013.09 1.25h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L7.09 8.63a16 16 0 006.29 6.29l1.45-1.45a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg><span>${l.contact}</span></div>`:""}
           ${l.note?`<div class="card-note">${l.note}</div>`:""}
-          <div class="del-confirm" id="delconfirm-${l.id}" onclick="event.stopPropagation()"><span>確定刪除？</span><button class="btn-del-yes" onclick="App.doDelete(${l.id})">刪除</button><button class="btn-del-no" onclick="App.cancelDelete(${l.id})">取消</button></div>
-          <div class="card-foot"><span class="card-ts">${UI.timeAgo(l.createdAt)}</span><div class="card-actions"><button class="btn-sm" onclick="event.stopPropagation();Modal.open(${l.id})">編輯</button><button class="btn-sm del" onclick="event.stopPropagation();App.confirmDelete(${l.id})">刪除</button>${l.link?`<a class="btn-link" href="${l.link}" target="_blank" onclick="event.stopPropagation()">連結</a>`:""}</div></div>
-        </div></div>`;
+          <div class="del-confirm" id="delconfirm-${l.id}" onclick="event.stopPropagation()">
+            <span>確定刪除？</span>
+            <button class="btn-del-yes" onclick="App.doDelete(${l.id})">刪除</button>
+            <button class="btn-del-no" onclick="App.cancelDelete(${l.id})">取消</button>
+          </div>
+          <div class="card-foot">
+            <span class="card-ts">${UI.timeAgo(l.createdAt)}</span>
+            <div class="card-actions">
+              <button class="btn-sm" onclick="event.stopPropagation();Modal.open(${l.id})">編輯</button>
+              <button class="btn-sm del" onclick="event.stopPropagation();App.confirmDelete(${l.id})">刪除</button>
+              ${l.link?`<a class="btn-link" href="${l.link}" target="_blank" onclick="event.stopPropagation()">連結</a>`:""}
+            </div>
+          </div>
+        </div>
+      </div>`;
     }).join("");
   },
   updateStats(vis,all){
@@ -1569,37 +1534,44 @@ const UI={
   }
 };
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   MODAL
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   MODAL  — add / edit listing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 const Modal={
-  _id:null,_verifiedAddr:null,_verifiedLat:null,_verifiedLng:null,
+  _id:null,_vAddr:null,_vLat:null,_vLng:null,
   open(id){
     this._id=id||null;
-    this._verifiedAddr=null;this._verifiedLat=null;this._verifiedLng=null;
+    this._vAddr=this._vLat=this._vLng=null;
     document.getElementById("modalIcon").textContent=id?"✏️":"＋";
     document.getElementById("modalTitleText").textContent=id?"編輯房源":"新增房源";
     document.getElementById("modalBg").classList.add("on");
-    const flds={fName:"name",fAddr:"address",fPrice:"price",fType:"type",fArea:"area",fFloor:"floor",fElec:"elec",fWater:"water",fWaterAmt:"waterAmt",fMgmt:"mgmt",fLicense:"license",fContact:"contact",fSource:"source",fLink:"link",fNote:"note"};
-    const existing=id?Store.listings().find(l=>l.id===id):null;
-    if(existing){
-      Object.entries(flds).forEach(([fid,key])=>{const el=document.getElementById(fid);if(el)el.value=existing[key]||"";});
-      document.getElementById("fSubsidy").checked=!!existing.subsidy;
-      document.getElementById("fAgent").checked=!!existing.agent;
-      document.getElementById("fParking").checked=!!existing.parking;
-      document.getElementById("fPet").checked=!!existing.pet;
-      ImgUpload.init(existing.images);
-      if(existing.lat){this._verifiedAddr=existing.address;this._verifiedLat=existing.lat;this._verifiedLng=existing.lng;}
+    const FM={fName:"name",fAddr:"address",fPrice:"price",fType:"type",fArea:"area",
+              fFloor:"floor",fElec:"elec",fWater:"water",fWaterAmt:"waterAmt",fMgmt:"mgmt",
+              fLicense:"license",fContact:"contact",fSource:"source",fLink:"link",fNote:"note"};
+    const ex=id?Store.listings().find(l=>l.id===id):null;
+    if(ex){
+      Object.entries(FM).forEach(([fid,k])=>{const el=document.getElementById(fid);if(el)el.value=ex[k]||"";});
+      ["fSubsidy","fAgent","fParking","fPet"].forEach(fid=>{
+        const el=document.getElementById(fid);if(el)el.checked=!!ex[fid.slice(1).toLowerCase()];});
+      document.getElementById("fSubsidy").checked=!!ex.subsidy;
+      document.getElementById("fAgent").checked=!!ex.agent;
+      document.getElementById("fParking").checked=!!ex.parking;
+      document.getElementById("fPet").checked=!!ex.pet;
+      ImgUpload.init(ex.images);
+      if(ex.lat){this._vAddr=ex.address;this._vLat=ex.lat;this._vLng=ex.lng;}
     } else {
-      Object.keys(flds).forEach(fid=>{const el=document.getElementById(fid);if(el)el.value=fid==="fSource"?"手動輸入":"";});
+      Object.keys(FM).forEach(fid=>{const el=document.getElementById(fid);if(el)el.value=fid==="fSource"?"手動輸入":"";});
       ["fSubsidy","fAgent","fParking","fPet"].forEach(fid=>{const el=document.getElementById(fid);if(el)el.checked=false;});
       ImgUpload.init(null);
     }
-    ["fName","fAddr"].forEach(f=>{document.getElementById(f).classList.remove("err");document.getElementById(f+"Err").classList.remove("on");});
+    ["fName","fAddr"].forEach(f=>{
+      document.getElementById(f).classList.remove("err");
+      document.getElementById(f+"Err").classList.remove("on");
+    });
     const hint=document.getElementById("fAddrHint");if(hint)hint.style.display="none";
     const vbtn=document.getElementById("btnVerifyAddr");
     if(vbtn){
-      if(existing?.lat){vbtn.className="btn-verify-addr ok";vbtn.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> 已定位';}
+      if(ex?.lat){vbtn.className="btn-verify-addr ok";vbtn.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> 已定位';}
       else{vbtn.className="btn-verify-addr";vbtn.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg> 定位';vbtn.disabled=false;}
     }
     setTimeout(()=>document.getElementById("fName").focus(),150);
@@ -1613,20 +1585,16 @@ const Modal={
     btn.disabled=true;btn.innerHTML="定位中...";hint.style.display="none";
     const result=await geocodeAddr(addr);
     if(result){
-      this._verifiedLat=result.lat;this._verifiedLng=result.lng;this._verifiedAddr=addr;
-      hint.className="f-addr-hint ok";hint.style.display="flex";
-      if(result.approximate){
-        hint.innerHTML='⚠ Nominatim 無法找到精確位置，使用行政區近似座標：' + result.display;
-        hint.className="f-addr-hint warn";
-      } else {
-        hint.innerHTML='✓ 定位成功：' + result.display;
-        hint.className="f-addr-hint ok";
-      }
-      btn.className="btn-verify-addr ok";btn.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> 已定位';
+      this._vLat=result.lat;this._vLng=result.lng;this._vAddr=addr;
+      hint.className=result.approximate?"f-addr-hint warn":"f-addr-hint ok";
+      hint.style.display="flex";
+      hint.innerHTML=(result.approximate?"⚠ 行政區近似：":"✓ 精確定位：")+result.display;
+      btn.className="btn-verify-addr ok";
+      btn.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> 已定位';
     } else {
-      this._verifiedLat=null;this._verifiedLng=null;
+      this._vLat=null;
       hint.className="f-addr-hint warn";hint.style.display="flex";
-      hint.innerHTML="⚠ 找不到地址。請確認格式：<b>台中市北區育德路2號</b>";
+      hint.innerHTML="⚠ 找不到地址，建議格式：<b>台中市北區育德路2號</b>";
       btn.className="btn-verify-addr";btn.innerHTML="重試定位";
     }
     btn.disabled=false;
@@ -1639,31 +1607,21 @@ const Modal={
     else{document.getElementById("fName").classList.remove("err");document.getElementById("fNameErr").classList.remove("on");}
     if(!addr){document.getElementById("fAddr").classList.add("err");document.getElementById("fAddrErr").classList.add("on");ok=false;}
     else{document.getElementById("fAddr").classList.remove("err");document.getElementById("fAddrErr").classList.remove("on");}
-    if(!ok)return;
+    if(!ok) return;
     const btn=document.getElementById("btnSave");
-    btn.textContent="儲存中..."; btn.disabled=true;
-    let lat=null, lng=null;
-    try {
-      const exist=this._id?Store.listings().find(l=>l.id===this._id):null;
-      // 優先使用已驗證座標（使用者點過「定位」按鈕）
-      if(this._verifiedAddr===addr && this._verifiedLat){
-        lat=this._verifiedLat; lng=this._verifiedLng;
-      } else if(exist && exist.address===addr && exist.lat){
-        lat=exist.lat; lng=exist.lng;
-      } else {
-        // 加上 5 秒硬性超時保護，確保不會永久卡住
-        const geoResult = await Promise.race([
-          geocodeAddr(addr),
-          new Promise(resolve=>setTimeout(()=>resolve(null), 5000))
-        ]);
-        if(geoResult){ lat=geoResult.lat; lng=geoResult.lng; }
+    btn.textContent="儲存中...";btn.disabled=true;
+    let lat=null,lng=null;
+    try{
+      const ex=this._id?Store.listings().find(l=>l.id===this._id):null;
+      if(this._vAddr===addr&&this._vLat){lat=this._vLat;lng=this._vLng;}
+      else if(ex&&ex.address===addr&&ex.lat){lat=ex.lat;lng=ex.lng;}
+      else{
+        const r=await Promise.race([geocodeAddr(addr),new Promise(res=>setTimeout(()=>res(null),6000))]);
+        if(r){lat=r.lat;lng=r.lng;}
       }
-    } catch(e){
-      console.warn("Geocoding failed during save:", e);
-      // 定位失敗不阻止儲存，lat/lng 保持 null
-    }
+    }catch(e){console.warn("Geocode in save:",e);}
     const obj={
-      id:this._id||Date.now(),name,address:addr,lat,lng,
+      id:this._id||Date.now(), name, address:addr, lat, lng,
       price:document.getElementById("fPrice").value||null,
       type:document.getElementById("fType").value||null,
       area:document.getElementById("fArea").value||null,
@@ -1682,26 +1640,26 @@ const Modal={
       link:document.getElementById("fLink").value.trim()||null,
       note:document.getElementById("fNote").value.trim()||null,
       images:ImgUpload.get(),
-      createdAt:exist?.createdAt||Date.now(),
+      createdAt:(this._id?Store.listings().find(l=>l.id===this._id)?.createdAt:null)||Date.now(),
     };
-    let all=Store.listings();
-    try {
+    try{
+      let all=Store.listings();
       all=this._id?all.map(l=>l.id===this._id?obj:l):[obj,...all];
       Store.saveLst(all);
-    } catch(e){
-      console.error("儲存失敗:", e);
-      alert("儲存失敗，可能是圖片過大超過瀏覽器限制。請嘗試不上傳圖片或縮小圖片後再試。");
-    } finally {
-      btn.textContent="儲存房源"; btn.disabled=false;
+    }catch(e){
+      alert("儲存失敗：可能是圖片過大超過瀏覽器限制，請嘗試不上傳圖片或縮小圖片後再試。");
+    }finally{
+      btn.textContent="儲存房源";btn.disabled=false;
     }
-    this.close(); App.filter();
+    this.close();App.filter();
   }
 };
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   APP
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   APP  — filter, sort, orchestrate
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 const App={
+  _current:[],
   filter(){
     const q=(document.getElementById("deskSearch")?.value||document.getElementById("mobSearch")?.value||"").toLowerCase();
     const type=(document.querySelector("#typeChips .tchip.on")||{}).dataset?.v||"all";
@@ -1716,12 +1674,11 @@ const App={
     const all=Store.listings();
     let res=[...all];
     if(q) res=res.filter(l=>(l.name+l.address+(l.note||"")).toLowerCase().includes(q));
-    // 地區篩選：若有選區域則比對區域名稱，否則比對縣市名稱
-    if(selectedDistricts.size>0){
-      res=res.filter(l=>{const addr=l.address||""; return [...selectedDistricts].some(d=>addr.includes(d));});
-    } else if(selectedCity){
+    // 地區篩選
+    if(selectedDistricts.size>0)
+      res=res.filter(l=>[...selectedDistricts].some(d=>(l.address||"").includes(d)));
+    else if(selectedCity)
       res=res.filter(l=>(l.address||"").includes(selectedCity));
-    }
     if(type!=="all") res=res.filter(l=>l.type===type);
     if(pMin) res=res.filter(l=>l.price&&Number(l.price)>=pMin);
     if(pMax<Infinity) res=res.filter(l=>l.price&&Number(l.price)<=pMax);
@@ -1730,64 +1687,97 @@ const App={
     if(hideAgent) res=res.filter(l=>!l.agent);
     if(sort==="price_asc") res.sort((a,b)=>(Number(a.price)||999999)-(Number(b.price)||999999));
     if(sort==="price_desc") res.sort((a,b)=>(Number(b.price)||0)-(Number(a.price)||0));
-    if(sort==="dist_asc"&&refs.length) res.sort((a,b)=>{const da=a.lat?Dist.hav(a.lat,a.lng,refs[0].lat,refs[0].lng):999;const db=b.lat?Dist.hav(b.lat,b.lng,refs[0].lat,refs[0].lng):999;return da-db;});
+    if(sort==="dist_asc"&&refs.length) res.sort((a,b)=>{
+      const da=a.lat?Dist.hav(a.lat,a.lng,refs[0].lat,refs[0].lng):999;
+      const db=b.lat?Dist.hav(b.lat,b.lng,refs[0].lat,refs[0].lng):999;
+      return da-db;
+    });
+    this._current=res;
     UI.updateStats(res,all);
     UI.renderCards(res,refs,mode);
     MapMod.renderListings(res,refs,mode);
     updateFilterPreview();
-    // 預熱 Google Distance Matrix 快取（背景執行，完成後自動更新卡片）
-    if(GOOGLE_API_KEY && refs.length){
-      Dist.warmCache(res, refs, mode);
-    }
+    // 背景預熱 Distance Matrix 快取
+    if(refs.length) Dist.warm(res,refs,mode);
   },
-  // 不重新篩選，只重新渲染卡片（快取更新後呼叫）
+  // 只重新渲染目前顯示的卡片（快取更新後呼叫）
   rerender(){
     const mode=(document.querySelector(".mchip.on")||{}).dataset?.v||"drive";
     const refs=Refs.active();
     const all=Store.listings();
-    // 取目前已顯示的 listings（從 DOM 讀取 id）
     const shown=[...document.querySelectorAll(".card[data-id]")]
       .map(el=>all.find(l=>l.id==el.dataset.id)).filter(Boolean);
-    if(shown.length) UI.renderCards(shown, refs, mode);
-    MapMod.renderListings(shown, refs, mode);
+    if(shown.length){UI.renderCards(shown,refs,mode);MapMod.renderListings(shown,refs,mode);}
   },
   onCardClick(id){UI.highlightCard(id);MapMod.flyOpen(id);if(window.innerWidth<=768)switchTab("map");},
-  // Mobile: called from popup "查看詳情" button — switch to list and highlight
-  goToCard(id){
-    switchTab("list");
-    setTimeout(()=>UI.highlightCard(id), 200); // wait for tab transition
-  },
-  confirmDelete(id){document.querySelectorAll(".del-confirm.show").forEach(el=>el.classList.remove("show"));document.getElementById("delconfirm-"+id)?.classList.add("show");},
+  goToCard(id){switchTab("list");setTimeout(()=>UI.highlightCard(id),200);},
+  confirmDelete(id){document.querySelectorAll(".del-confirm.show").forEach(e=>e.classList.remove("show"));document.getElementById("delconfirm-"+id)?.classList.add("show");},
   cancelDelete(id){document.getElementById("delconfirm-"+id)?.classList.remove("show");},
   doDelete(id){Store.saveLst(Store.listings().filter(l=>l.id!==id));this.filter();}
 };
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   HELPERS & INIT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-function pickTchip(el){document.querySelectorAll("#typeChips .tchip").forEach(c=>c.classList.remove("on"));el.classList.add("on");App.filter();updateFilterPreview();}
-function pickMchip(el){document.querySelectorAll(".mchip").forEach(c=>c.classList.remove("on"));el.classList.add("on");App.filter();}
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   DISCLAIMER MODAL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+function showDisclaimer(){
+  document.getElementById("disclaimerModal").classList.add("on");
+}
+function closeDisclaimer(){
+  document.getElementById("disclaimerModal").classList.remove("on");
+  // 記住已閱讀，本次 session 不再重複顯示
+  sessionStorage.setItem("disclaimer_read","1");
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   HELPERS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+function pickTchip(el){
+  document.querySelectorAll("#typeChips .tchip").forEach(c=>c.classList.remove("on"));
+  el.classList.add("on");App.filter();updateFilterPreview();
+}
+function pickMchip(el){
+  document.querySelectorAll(".mchip").forEach(c=>c.classList.remove("on"));
+  el.classList.add("on");App.filter();
+}
 function switchTab(tab){
   const l=document.getElementById("leftPanel"),r=document.getElementById("rightPanel");
   const tl=document.getElementById("tabList"),tm=document.getElementById("tabMap");
-  if(tab==="list"){l.classList.add("tab-on");r.classList.remove("tab-on");tl.classList.add("on");tm.classList.remove("on");}
-  else{
-    r.classList.add("tab-on");l.classList.remove("tab-on");tm.classList.add("on");tl.classList.remove("on");
+  if(tab==="list"){
+    l.classList.add("tab-on");r.classList.remove("tab-on");
+    tl.classList.add("on");tm.classList.remove("on");
+  } else {
+    r.classList.add("tab-on");l.classList.remove("tab-on");
+    tm.classList.add("on");tl.classList.remove("on");
     MapMod._doInit();
-    setTimeout(()=>{MapMod._map?.invalidateSize(true);MapMod.renderRefs(Refs.active());App.filter();},350);
+    setTimeout(()=>{
+      MapMod._map?.invalidateSize(true);
+      MapMod.renderRefs(Refs.active());
+      App.rerender();
+    },350);
   }
 }
 
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   INIT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 window.addEventListener("DOMContentLoaded",()=>{
   initDistrictFilter();
   MapMod.init();
   Refs.init();
   MapMod.renderRefs(Refs.active());
   App.filter();
-  document.getElementById("deskSearch").addEventListener("input",()=>{document.getElementById("mobSearch").value=document.getElementById("deskSearch").value;App.filter();});
-  document.getElementById("mobSearch").addEventListener("input",()=>{document.getElementById("deskSearch").value=document.getElementById("mobSearch").value;App.filter();});
-  window.addEventListener("resize",()=>{MapMod._map?.invalidateSize(true);});
+  // sync search bars
+  document.getElementById("deskSearch").addEventListener("input",()=>{
+    document.getElementById("mobSearch").value=document.getElementById("deskSearch").value;App.filter();
+  });
+  document.getElementById("mobSearch").addEventListener("input",()=>{
+    document.getElementById("deskSearch").value=document.getElementById("mobSearch").value;App.filter();
+  });
+  window.addEventListener("resize",()=>MapMod._map?.invalidateSize(true));
+  // 首次顯示免責聲明
+  if(!sessionStorage.getItem("disclaimer_read")) showDisclaimer();
 });
 </script>
+
 </body>
 </html>
