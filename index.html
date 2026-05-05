@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>租屋查找器</title>
+<title>租了啦</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -173,6 +173,12 @@ html,body { height:100%; overflow:hidden; background:var(--bg); color:var(--t1);
 }
 
 /* district grid */
+.city-sel {
+  background:var(--bg); border:1px solid var(--b1); color:var(--t1);
+  border-radius:var(--r); padding:5px 10px; font-size:13px; font-family:var(--sans);
+  outline:none; cursor:pointer; flex:1; transition:border-color .2s;
+}
+.city-sel:focus { border-color:var(--fog) }
 .district-grid {
   display:flex; flex-wrap:wrap; gap:5px;
 }
@@ -571,6 +577,12 @@ html,body { height:100%; overflow:hidden; background:var(--bg); color:var(--t1);
 .pu-meta { font-size:11px; color:var(--t3); line-height:1.7 }
 .pu-link { color:var(--sage); font-size:11px; display:block; margin-top:6px; text-decoration:none; font-weight:500 }
 .pu-link:hover { text-decoration:underline }
+.pu-detail-btn {
+  width:100%; padding:7px; border-radius:7px; border:none; cursor:pointer;
+  background:var(--sage); color:#fff; font-size:12px; font-weight:700;
+  font-family:var(--sans); letter-spacing:.02em; transition:opacity .15s;
+}
+.pu-detail-btn:hover { opacity:.85 }
 .pu-ref { font-size:13px; font-weight:600; color:var(--terra); margin-bottom:4px }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -654,12 +666,16 @@ html,body { height:100%; overflow:hidden; background:var(--bg); color:var(--t1);
       </div>
       <div class="filter-body" id="filterBody" style="display:none">
 
-        <!-- District -->
+        <!-- District with city dropdown -->
         <div>
-          <div class="fsec-title">地區（可複選）</div>
+          <div class="fsec-title">地區篩選</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <label style="font-size:11px;color:var(--t3);white-space:nowrap">縣市</label>
+            <select id="citySelect" class="city-sel" onchange="onCityChange()"></select>
+          </div>
           <div class="district-grid" id="districtGrid"></div>
           <div class="district-actions">
-            <button class="btn-district-all" onclick="selectAllDistricts()">全選</button>
+            <button class="btn-district-all" onclick="selectAllDistricts()">全選此縣市</button>
             <button class="btn-district-clear" onclick="clearDistricts()">清除</button>
           </div>
         </div>
@@ -891,19 +907,11 @@ html,body { height:100%; overflow:hidden; background:var(--bg); color:var(--t1);
       </div>
     </div>
 
-    <!-- 圖片上傳 -->
-    <div class="f-sec">
-      <div class="f-sec-title">圖片（最多 4 張）</div>
-      <div id="imgPreviewArea" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;min-height:68px"></div>
-      <div style="font-size:10px;color:var(--t4);margin-top:5px">圖片暫存於瀏覽器。後端完成後可同步至雲端。</div>
-    </div>
-
-
-    <!-- 圖片上傳 -->
+    
     <div class="f-sec" style="margin-bottom:0">
       <div class="f-sec-title">圖片（最多 4 張）</div>
       <div id="imgPreviewArea" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;min-height:68px;padding:4px 0"></div>
-      <div style="font-size:10px;color:var(--t4);margin-top:4px">圖片存於瀏覽器。後端完成後可同步至雲端。</div>
+      <div style="font-size:10px;color:var(--t4);margin-top:4px">圖片存於瀏覽器，後端完成後可同步至雲端。</div>
     </div>
 
     <div class="modal-foot">
@@ -918,24 +926,119 @@ html,body { height:100%; overflow:hidden; background:var(--bg); color:var(--t1);
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    DISTRICTS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-const DISTRICTS=["中區","東區","南區","西區","北區","西屯區","南屯區","北屯區","豐原區","大里區","太平區","霧峰區","烏日區","潭子區","大雅區","神岡區","后里區","石岡區","東勢區","和平區","新社區","沙鹿區","龍井區","梧棲區","清水區","大甲區","外埔區","大安區"];
-let selectedDistricts=new Set();
-function initDistrictGrid(){
-  const g=document.getElementById("districtGrid");
-  g.innerHTML=DISTRICTS.map(d=>`<button class="dchip" data-d="${d}" onclick="toggleDistrict(this,'${d}')">${d}</button>`).join("");
+// ── 縣市 → 行政區對照表 ───────────────────────────────────────────────────
+const CITY_DISTRICTS = {
+  "台中市": ["中區","東區","南區","西區","北區","西屯區","南屯區","北屯區",
+             "豐原區","大里區","太平區","霧峰區","烏日區","潭子區","大雅區",
+             "神岡區","后里區","石岡區","東勢區","和平區","新社區","沙鹿區",
+             "龍井區","梧棲區","清水區","大甲區","外埔區","大安區"],
+  "台北市": ["中正區","大同區","中山區","松山區","大安區","信義區",
+             "萬華區","文山區","南港區","內湖區","士林區","北投區"],
+  "新北市": ["板橋區","三重區","中和區","永和區","新莊區","新店區",
+             "樹林區","鶯歌區","三峽區","淡水區","汐止區","瑞芳區",
+             "土城區","蘆洲區","五股區","泰山區","林口區","深坑區",
+             "石碇區","坪林區","三芝區","石門區","八里區","平溪區",
+             "雙溪區","貢寮區","金山區","萬里區","烏來區"],
+  "台南市": ["中西區","東區","南區","北區","安平區","安南區",
+             "永康區","歸仁區","新化區","左鎮區","玉井區","楠西區",
+             "南化區","仁德區","關廟區","龍崎區","官田區","麻豆區",
+             "佳里區","西港區","七股區","將軍區","學甲區","北門區",
+             "新營區","後壁區","白河區","東山區","六甲區","下營區",
+             "柳營區","鹽水區","善化區","大內區","山上區","新市區",
+             "安定區"],
+  "高雄市": ["楠梓區","左營區","鼓山區","三民區","鹽埕區","前金區",
+             "苓雅區","前鎮區","旗津區","小港區","鳳山區","林園區",
+             "大寮區","大樹區","大社區","仁武區","鳥松區","岡山區",
+             "橋頭區","燕巢區","田寮區","阿蓮區","路竹區","湖內區",
+             "茄萣區","永安區","彌陀區","梓官區","旗山區","美濃區",
+             "六龜區","甲仙區","杉林區","內門區","茂林區","桃源區",
+             "那瑪夏區"],
+  "桃園市": ["桃園區","中壢區","平鎮區","八德區","楊梅區","蘆竹區",
+             "大溪區","龍潭區","龜山區","大園區","觀音區","新屋區",
+             "復興區"],
+  "新竹市": ["東區","北區","香山區"],
+  "新竹縣": ["竹北市","湖口鄉","新豐鄉","新埔鎮","關西鎮","芎林鄉",
+             "寶山鄉","竹東鎮","五峰鄉","橫山鄉","尖石鄉","北埔鄉","峨眉鄉"],
+  "苗栗縣": ["苗栗市","頭份市","竹南鎮","後龍鎮","通霄鎮","苑裡鎮",
+             "造橋鄉","頭屋鄉","公館鄉","大湖鄉","泰安鄉","銅鑼鄉",
+             "三義鄉","西湖鄉","卓蘭鎮","三灣鄉","南庄鄉","獅潭鄉"],
+  "彰化縣": ["彰化市","鹿港鎮","和美鎮","線西鄉","伸港鄉","福興鄉",
+             "秀水鄉","花壇鄉","芬園鄉","員林市","溪湖鎮","田中鎮",
+             "大村鄉","埔鹽鄉","埔心鄉","永靖鄉","社頭鄉","二水鄉",
+             "北斗鎮","二林鎮","田尾鄉","埤頭鄉","芳苑鄉","大城鄉",
+             "竹塘鄉","溪州鄉"],
+  "嘉義市": ["東區","西區"],
+  "嘉義縣": ["太保市","朴子市","布袋鎮","大林鎮","民雄鄉","溪口鄉",
+             "新港鄉","六腳鄉","東石鄉","義竹鄉","鹿草鄉","水上鄉",
+             "中埔鄉","竹崎鄉","梅山鄉","番路鄉","大埔鄉","阿里山鄉"],
+  "屏東縣": ["屏東市","潮州鎮","東港鎮","恆春鎮","萬丹鄉","長治鄉",
+             "麟洛鄉","九如鄉","里港鄉","鹽埔鄉","高樹鄉","萬巒鄉",
+             "內埔鄉","竹田鄉","新埤鄉","枋寮鄉","新園鄉","崁頂鄉",
+             "林邊鄉","南州鄉","佳冬鄉","琉球鄉","車城鄉","滿州鄉",
+             "枋山鄉","三地門鄉","霧台鄉","瑪家鄉","泰武鄉","來義鄉",
+             "春日鄉","獅子鄉","牡丹鄉"],
+  "宜蘭縣": ["宜蘭市","羅東鎮","蘇澳鎮","頭城鎮","礁溪鄉","壯圍鄉",
+             "員山鄉","冬山鄉","五結鄉","三星鄉","大同鄉","南澳鄉"],
+  "花蓮縣": ["花蓮市","鳳林鎮","玉里鎮","新城鄉","吉安鄉","壽豐鄉",
+             "光復鄉","豐濱鄉","瑞穗鄉","富里鄉","秀林鄉","萬榮鄉","卓溪鄉"],
+  "台東縣": ["台東市","成功鎮","關山鎮","卑南鄉","鹿野鄉","池上鄉",
+             "東河鄉","長濱鄉","太麻里鄉","大武鄉","綠島鄉","海端鄉",
+             "延平鄉","金峰鄉","達仁鄉","蘭嶼鄉"],
+  "基隆市": ["仁愛區","信義區","中正區","中山區","安樂區","暖暖區","七堵區"],
+};
+
+let selectedCity = "台中市";
+let selectedDistricts = new Set();
+
+function initDistrictFilter(){
+  // Build city dropdown
+  const sel = document.getElementById("citySelect");
+  sel.innerHTML = Object.keys(CITY_DISTRICTS).map(city=>
+    `<option value="${city}" ${city===selectedCity?"selected":""}>${city}</option>`
+  ).join("");
+  renderDistrictChips();
 }
-function toggleDistrict(el,d){
-  selectedDistricts.has(d)?selectedDistricts.delete(d):selectedDistricts.add(d);
-  el.classList.toggle("on",selectedDistricts.has(d));
+
+function onCityChange(){
+  const sel = document.getElementById("citySelect");
+  selectedCity = sel.value;
+  selectedDistricts.clear();
+  renderDistrictChips();
   App.filter(); updateFilterPreview();
 }
-function selectAllDistricts(){ DISTRICTS.forEach(d=>selectedDistricts.add(d)); document.querySelectorAll(".dchip").forEach(c=>c.classList.add("on")); App.filter(); updateFilterPreview(); }
-function clearDistricts(){ selectedDistricts.clear(); document.querySelectorAll(".dchip").forEach(c=>c.classList.remove("on")); App.filter(); updateFilterPreview(); }
+
+function renderDistrictChips(){
+  const g = document.getElementById("districtGrid");
+  const districts = CITY_DISTRICTS[selectedCity] || [];
+  g.innerHTML = districts.map(d=>
+    `<button class="dchip ${selectedDistricts.has(d)?"on":""}" data-d="${d}" onclick="toggleDistrict(this,'${d}')">${d}</button>`
+  ).join("");
+}
+
+function toggleDistrict(el,d){
+  selectedDistricts.has(d) ? selectedDistricts.delete(d) : selectedDistricts.add(d);
+  el.classList.toggle("on", selectedDistricts.has(d));
+  App.filter(); updateFilterPreview();
+}
+function selectAllDistricts(){
+  (CITY_DISTRICTS[selectedCity]||[]).forEach(d=>selectedDistricts.add(d));
+  document.querySelectorAll(".dchip").forEach(c=>c.classList.add("on"));
+  App.filter(); updateFilterPreview();
+}
+function clearDistricts(){
+  selectedDistricts.clear();
+  document.querySelectorAll(".dchip").forEach(c=>c.classList.remove("on"));
+  App.filter(); updateFilterPreview();
+}
 function updateFilterPreview(){
-  const el=document.getElementById("filterTagsPreview");
-  const tags=[];
-  if(selectedDistricts.size>0&&selectedDistricts.size<=3) [...selectedDistricts].forEach(d=>tags.push(`<span class="ftag">${d}</span>`));
-  else if(selectedDistricts.size>3) tags.push(`<span class="ftag">${selectedDistricts.size} 個地區</span>`);
+  const el = document.getElementById("filterTagsPreview");
+  const tags = [];
+  if(selectedDistricts.size>0 && selectedDistricts.size<=2)
+    [...selectedDistricts].forEach(d=>tags.push(`<span class="ftag">${selectedCity}${d}</span>`));
+  else if(selectedDistricts.size>2)
+    tags.push(`<span class="ftag">${selectedCity} ${selectedDistricts.size}區</span>`);
+  else if(selectedCity!=="台中市")
+    tags.push(`<span class="ftag">${selectedCity}</span>`);
   const type=(document.querySelector("#typeChips .tchip.on")||{}).dataset?.v;
   if(type&&type!=="all") tags.push(`<span class="ftag terra">${type}</span>`);
   el.innerHTML=tags.join("");
@@ -1002,14 +1105,43 @@ function normalizeAddr(addr){
     .trim();
 }
 
-// ── Nominatim Geocoding（OpenStreetMap）─────────────────────────────────
-// 使用 Nominatim 官方服務，限速 1 req/s，個人使用完全足夠
+// ── Google Maps Geocoding API Key ───────────────────────────────────────
+// 申請後填入 Key，留空則使用 Nominatim 備援
+const GOOGLE_API_KEY = "AIzaSyD_9Ac5t7gn3zbsaZ-NNo1Pcb_xU-et4t4";
+
+// ── Nominatim throttle ───────────────────────────────────────────────────
 let _lastGeoTime = 0;
 
 async function geocodeAddr(addr){
   if(!addr.trim()) return null;
   const clean = normalizeAddr(addr);
 
+  // ── 優先使用 Google Maps Geocoding API（精確）──────────────────────────
+  if(GOOGLE_API_KEY){
+    try{
+      const url = "https://maps.googleapis.com/maps/api/geocode/json"
+        + "?address=" + encodeURIComponent(clean)
+        + "&region=tw"
+        + "&language=zh-TW"
+        + "&key=" + GOOGLE_API_KEY;
+      const controller = new AbortController();
+      const tid = setTimeout(()=>controller.abort(), 6000);
+      const res = await fetch(url, {signal:controller.signal});
+      clearTimeout(tid);
+      const data = await res.json();
+      if(data.status==="OK" && data.results[0]){
+        const r = data.results[0];
+        const loc = r.geometry.location;
+        return {
+          lat: loc.lat, lng: loc.lng,
+          display: r.formatted_address,
+          approximate: false
+        };
+      }
+    }catch(e){ console.warn("Google Geocoding failed:", e.message); }
+  }
+
+  // ── 備援：Nominatim（需要 HTTPS 環境，本機 file:// 無效）──────────────
   // 節流：確保每次請求間隔至少 1100ms（Nominatim 政策）
   const now = Date.now();
   const wait = Math.max(0, 1100 - (now - _lastGeoTime));
@@ -1028,10 +1160,18 @@ async function geocodeAddr(addr){
         + "?format=json&limit=1&addressdetails=1"
         + "&countrycodes=tw"
         + "&q=" + encodeURIComponent(q);
-      const res = await fetch(url, {
-        headers: { "Accept": "application/json" },
-        signal: AbortSignal.timeout(8000)
-      });
+      // Promise.race: 相容所有瀏覽器的超時機制（AbortSignal.timeout 部分瀏覽器不支援）
+      const controller = new AbortController();
+      const timeoutId = setTimeout(()=>controller.abort(), 8000);
+      let res;
+      try {
+        res = await fetch(url, {
+          headers: { "Accept": "application/json" },
+          signal: controller.signal
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
       if(!res.ok) continue;
       const data = await res.json();
       if(data && data[0]){
@@ -1063,33 +1203,128 @@ async function geocodeAddr(addr){
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    DISTANCE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-const Dist={
-  // Haversine 直線距離（km）
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   DISTANCE MODULE
+   Google Distance Matrix API + Haversine fallback
+   Cache: avoid duplicate API calls
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const Dist = {
+  // ── Haversine（備援用）──────────────────────────────────────────────────
   hav(a,b,c,d){
     const R=6371,dL=(c-a)*Math.PI/180,dG=(d-b)*Math.PI/180;
     const x=Math.sin(dL/2)**2+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dG/2)**2;
     return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
   },
-  // 道路修正係數：市區 1.35，郊區 1.2（取中間值 1.3）
-  ROAD_FACTOR: 1.3,
-  // 台灣實測平均速度 km/h [離峰, 尖峰]
-  // 開車：台中市區離峰25、尖峰15；機車較靈活；步行基本固定
-  SP:{drive:[25,15], moto:[28,18], walk:[5,4.5]},
-  // 從直線距離估算實際路程距離
-  roadKm(straightKm){ return straightKm * this.ROAD_FACTOR; },
-  // 時間區間（分鐘）
-  time(roadKm,m){
-    const[op,pk]=this.SP[m]||this.SP.drive;
-    const a=Math.round(roadKm/op*60), b=Math.round(roadKm/pk*60);
-    return{min:Math.min(a,b), max:Math.max(a,b)};
-  },
-  calc(l,refs,m){
+
+  // ── 本地估算備援（無 API Key 時使用）──────────────────────────────────
+  ROAD:1.3, SP:{drive:[25,15], moto:[28,18], walk:[5,4.5]},
+  localCalc(l, refs, mode){
     if(!refs.length||!l.lat) return null;
     return refs.filter(r=>r.lat&&r.lng).map(r=>{
-      const straight=this.hav(l.lat,l.lng,r.lat,r.lng);
-      const road=this.roadKm(straight);
-      return {name:r.name, color:r.color, straightKm:straight, km:road, time:this.time(road,m)};
+      const s=this.hav(l.lat,l.lng,r.lat,r.lng), km=s*this.ROAD;
+      const [op,pk]=this.SP[mode]||this.SP.drive;
+      const tMin=Math.round(km/op*60), tMax=Math.round(km/pk*60);
+      return {name:r.name, color:r.color, km:+km.toFixed(1),
+              time:{min:Math.min(tMin,tMax), max:Math.max(tMin,tMax)}, source:"estimate"};
     });
+  },
+
+  // ── Google Distance Matrix API ─────────────────────────────────────────
+  // 快取：key = "lat,lng|lat,lng|mode"
+  _cache: {},
+  _cacheKey(oLat,oLng,dLat,dLng,mode){ return `${oLat.toFixed(5)},${oLng.toFixed(5)}|${dLat.toFixed(5)},${dLng.toFixed(5)}|${mode}`; },
+
+  // Google 模式對應（機車用 driving + 係數修正）
+  _googleMode(mode){ return mode==="walk"?"walking":"driving"; },
+
+  async fetchGoogle(oLat,oLng,dLat,dLng,mode){
+    if(!GOOGLE_API_KEY) return null;
+    const cKey = this._cacheKey(oLat,oLng,dLat,dLng,mode);
+    if(this._cache[cKey]) return this._cache[cKey];
+    try{
+      const gMode = this._googleMode(mode);
+      const url = "https://maps.googleapis.com/maps/api/distancematrix/json"
+        + "?origins="      + oLat + "," + oLng
+        + "&destinations=" + dLat + "," + dLng
+        + "&mode="         + gMode
+        + "&language=zh-TW"
+        + "&key="          + GOOGLE_API_KEY;
+      const controller = new AbortController();
+      const tid = setTimeout(()=>controller.abort(), 6000);
+      const res = await fetch(url, {signal:controller.signal});
+      clearTimeout(tid);
+      const data = await res.json();
+      const el = data?.rows?.[0]?.elements?.[0];
+      if(!el || el.status!=="OK") return null;
+      let km = el.distance.value / 1000;           // 公尺 → 公里
+      let sec = el.duration.value;                  // 秒
+      // 機車修正：路線距離相同但速度較快（不塞車）約 1.15 倍速
+      if(mode==="moto"){ sec = Math.round(sec / 1.15); }
+      const result = {
+        km: +km.toFixed(1),
+        time: { min: Math.round(sec/60), max: Math.round(sec*1.35/60) }, // min=離峰, max=尖峰
+        source: "google"
+      };
+      this._cache[cKey] = result;
+      return result;
+    }catch(e){ console.warn("Distance Matrix error:", e.message); return null; }
+  },
+
+  // ── 批次計算所有 ref 距離（async）────────────────────────────────────
+  async calcAsync(l, refs, mode){
+    if(!refs.length || !l.lat) return null;
+    const active = refs.filter(r=>r.lat&&r.lng);
+    if(!active.length) return null;
+    const results = await Promise.all(active.map(async r=>{
+      const g = await this.fetchGoogle(l.lat,l.lng,r.lat,r.lng,mode);
+      if(g) return {name:r.name, color:r.color, km:g.km, time:g.time, source:"google"};
+      // 備援：本地估算
+      const s=this.hav(l.lat,l.lng,r.lat,r.lng), km=+(s*this.ROAD).toFixed(1);
+      const [op,pk]=this.SP[mode]||this.SP.drive;
+      return {name:r.name, color:r.color, km,
+              time:{min:Math.round(km/op*60), max:Math.round(km/pk*60)}, source:"estimate"};
+    }));
+    return results;
+  },
+
+  // ── 同步版（快取命中時用，初次渲染備援）────────────────────────────────
+  calc(l, refs, mode){
+    if(!refs.length||!l.lat) return null;
+    const active = refs.filter(r=>r.lat&&r.lng);
+    if(!active.length) return null;
+    return active.map(r=>{
+      const cKey = this._cacheKey(l.lat,l.lng,r.lat,r.lng,mode);
+      if(this._cache[cKey]){
+        const g = this._cache[cKey];
+        return {name:r.name, color:r.color, km:g.km, time:g.time, source:"google"};
+      }
+      // 快取未命中 → 本地估算，並在背景呼叫 API 更新
+      const s=this.hav(l.lat,l.lng,r.lat,r.lng), km=+(s*this.ROAD).toFixed(1);
+      const [op,pk]=this.SP[mode]||this.SP.drive;
+      // 觸發背景更新（不等待）
+      if(GOOGLE_API_KEY) this.fetchGoogle(l.lat,l.lng,r.lat,r.lng,mode).then(()=>{});
+      return {name:r.name, color:r.color, km,
+              time:{min:Math.round(km/op*60), max:Math.round(km/pk*60)}, source:"estimate"};
+    });
+  },
+
+  // ── 預熱快取：listings + refs 載入後批次呼叫 API ──────────────────────
+  async warmCache(listings, refs, mode){
+    if(!GOOGLE_API_KEY) return;
+    const active = refs.filter(r=>r.lat&&r.lng);
+    if(!active.length) return;
+    // 有座標的 listings，並發但限制並發數（每批 5 個）
+    const withLat = listings.filter(l=>l.lat);
+    const BATCH = 5;
+    for(let i=0; i<withLat.length; i+=BATCH){
+      const batch = withLat.slice(i, i+BATCH);
+      await Promise.all(batch.map(l=>
+        Promise.all(active.map(r=>this.fetchGoogle(l.lat,l.lng,r.lat,r.lng,mode)))
+      ));
+      // 每批完成後重新渲染，讓使用者看到即時更新
+      if(i>0) App.rerender();
+    }
+    App.rerender();
   }
 };
 
@@ -1185,9 +1420,17 @@ const MapMod={
       const color=isCrawl?"#7A8CA0":"#7B8C7A";
       const com=Dist.calc(l,refs,mode);
       const km=com&&com[0]?com[0].km.toFixed(1)+" km":"";
-      const popup=`<div class="pu-name">🏠 ${l.name}</div>${l.price?`<div class="pu-price">NT$ ${Number(l.price).toLocaleString()} / 月</div>`:""}<div class="pu-meta">${l.address}${km?`<br>📍 ${km}（${com[0].time.min}–${com[0].time.max} 分）`:""}</div>${l.link?`<a class="pu-link" href="${l.link}" target="_blank">→ 查看來源 ↗</a>`:""}`;
-      const m=L.marker([l.lat,l.lng],{icon:this.pinIcon(color)}).addTo(this._map).bindPopup(popup,{maxWidth:240});
-      m.on("click",()=>{UI.highlightCard(l.id);if(window.innerWidth<=768)switchTab("list");});
+      const isMobile=window.innerWidth<=768;
+      const detailBtn=isMobile
+        ? `<button class="pu-detail-btn" onclick="App.goToCard(${l.id})">查看詳情 →</button>`
+        : "";
+      const popup=`<div class="pu-name">🏠 ${l.name}</div>${l.price?`<div class="pu-price">NT$ ${Number(l.price).toLocaleString()} / 月</div>`:""}<div class="pu-meta">${l.address}${km?`<br>📍 ${com[0].km} km${GOOGLE_API_KEY?"":" (估算)"}（${com[0].time.min}–${com[0].time.max} 分${GOOGLE_API_KEY?"":" 估算"}）`:""}</div>${l.link?`<a class="pu-link" href="${l.link}" target="_blank">→ 查看來源 ↗</a>`:""}<div style="margin-top:8px">${detailBtn}</div>`;
+      const m=L.marker([l.lat,l.lng],{icon:this.pinIcon(color)}).addTo(this._map).bindPopup(popup,{maxWidth:260});
+      m.on("click",()=>{
+        // Mobile: stay on map, open popup — user taps "查看詳情" to go to list
+        // Desktop: highlight card in list
+        if(window.innerWidth>768) UI.highlightCard(l.id);
+      });
       this._lm[l.id]=m;
     });
   },
@@ -1213,13 +1456,33 @@ const ImgUpload={
     this._imgs=existing?[...existing]:[];
     this.render();
   },
+  // 壓縮圖片至最大 800x600、品質 0.75，避免 localStorage 超過上限
+  async compressImage(file){
+    return new Promise(resolve=>{
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = ()=>{
+        URL.revokeObjectURL(url);
+        const MAX_W=800, MAX_H=600;
+        let w=img.width, h=img.height;
+        if(w>MAX_W){ h=Math.round(h*MAX_W/w); w=MAX_W; }
+        if(h>MAX_H){ w=Math.round(w*MAX_H/h); h=MAX_H; }
+        const canvas=document.createElement("canvas");
+        canvas.width=w; canvas.height=h;
+        canvas.getContext("2d").drawImage(img,0,0,w,h);
+        resolve(canvas.toDataURL("image/jpeg", 0.75));
+      };
+      img.onerror = ()=>{ URL.revokeObjectURL(url); resolve(null); };
+      img.src = url;
+    });
+  },
   async addFile(input){
     const files=Array.from(input.files);
     for(const file of files){
       if(!file.type.startsWith("image/"))continue;
       if(this._imgs.length>=4){alert("最多上傳 4 張圖片");break;}
-      const b64=await new Promise(res=>{const r=new FileReader();r.onload=()=>res(r.result);r.readAsDataURL(file);});
-      this._imgs.push(b64);
+      const b64 = await this.compressImage(file);
+      if(b64) this._imgs.push(b64);
     }
     input.value="";
     this.render();
@@ -1264,8 +1527,8 @@ const UI={
         ${com.map(d=>`<div class="crow">
           <div class="cdot" style="background:${d.color}"></div>
           <span class="clabel">${d.name}</span>
-          <span class="ckm">${d.km.toFixed(1)} km</span>
-          <span class="ctime">${me} 約 ${d.time.min}–${d.time.max} 分</span>
+          <span class="ckm">${d.km} km</span>
+          <span class="ctime">${me} 約 ${d.time.min}–${d.time.max} 分 ${d.source==="estimate"?'<span style="font-size:9px;color:var(--t4)">估算</span>':''}</span>
         </div>`).join("")}
       </div>`:"";
       const wLbl={included:"含水費",meter:"水錶",fixed:`水費${l.waterAmt?l.waterAmt+"元":""}`};
@@ -1378,12 +1641,27 @@ const Modal={
     else{document.getElementById("fAddr").classList.remove("err");document.getElementById("fAddrErr").classList.remove("on");}
     if(!ok)return;
     const btn=document.getElementById("btnSave");
-    btn.textContent="儲存中...";btn.disabled=true;
-    let lat=null,lng=null;
-    const exist=this._id?Store.listings().find(l=>l.id===this._id):null;
-    if(this._verifiedAddr===addr&&this._verifiedLat){lat=this._verifiedLat;lng=this._verifiedLng;}
-    else if(exist&&exist.address===addr&&exist.lat){lat=exist.lat;lng=exist.lng;}
-    else{const r=await geocodeAddr(addr);if(r){lat=r.lat;lng=r.lng;}}
+    btn.textContent="儲存中..."; btn.disabled=true;
+    let lat=null, lng=null;
+    try {
+      const exist=this._id?Store.listings().find(l=>l.id===this._id):null;
+      // 優先使用已驗證座標（使用者點過「定位」按鈕）
+      if(this._verifiedAddr===addr && this._verifiedLat){
+        lat=this._verifiedLat; lng=this._verifiedLng;
+      } else if(exist && exist.address===addr && exist.lat){
+        lat=exist.lat; lng=exist.lng;
+      } else {
+        // 加上 5 秒硬性超時保護，確保不會永久卡住
+        const geoResult = await Promise.race([
+          geocodeAddr(addr),
+          new Promise(resolve=>setTimeout(()=>resolve(null), 5000))
+        ]);
+        if(geoResult){ lat=geoResult.lat; lng=geoResult.lng; }
+      }
+    } catch(e){
+      console.warn("Geocoding failed during save:", e);
+      // 定位失敗不阻止儲存，lat/lng 保持 null
+    }
     const obj={
       id:this._id||Date.now(),name,address:addr,lat,lng,
       price:document.getElementById("fPrice").value||null,
@@ -1407,10 +1685,16 @@ const Modal={
       createdAt:exist?.createdAt||Date.now(),
     };
     let all=Store.listings();
-    all=this._id?all.map(l=>l.id===this._id?obj:l):[obj,...all];
-    Store.saveLst(all);
-    btn.textContent="儲存房源";btn.disabled=false;
-    this.close();App.filter();
+    try {
+      all=this._id?all.map(l=>l.id===this._id?obj:l):[obj,...all];
+      Store.saveLst(all);
+    } catch(e){
+      console.error("儲存失敗:", e);
+      alert("儲存失敗，可能是圖片過大超過瀏覽器限制。請嘗試不上傳圖片或縮小圖片後再試。");
+    } finally {
+      btn.textContent="儲存房源"; btn.disabled=false;
+    }
+    this.close(); App.filter();
   }
 };
 
@@ -1432,7 +1716,12 @@ const App={
     const all=Store.listings();
     let res=[...all];
     if(q) res=res.filter(l=>(l.name+l.address+(l.note||"")).toLowerCase().includes(q));
-    if(selectedDistricts.size>0) res=res.filter(l=>{const addr=l.address||"";return [...selectedDistricts].some(d=>addr.includes(d));});
+    // 地區篩選：若有選區域則比對區域名稱，否則比對縣市名稱
+    if(selectedDistricts.size>0){
+      res=res.filter(l=>{const addr=l.address||""; return [...selectedDistricts].some(d=>addr.includes(d));});
+    } else if(selectedCity){
+      res=res.filter(l=>(l.address||"").includes(selectedCity));
+    }
     if(type!=="all") res=res.filter(l=>l.type===type);
     if(pMin) res=res.filter(l=>l.price&&Number(l.price)>=pMin);
     if(pMax<Infinity) res=res.filter(l=>l.price&&Number(l.price)<=pMax);
@@ -1446,8 +1735,28 @@ const App={
     UI.renderCards(res,refs,mode);
     MapMod.renderListings(res,refs,mode);
     updateFilterPreview();
+    // 預熱 Google Distance Matrix 快取（背景執行，完成後自動更新卡片）
+    if(GOOGLE_API_KEY && refs.length){
+      Dist.warmCache(res, refs, mode);
+    }
+  },
+  // 不重新篩選，只重新渲染卡片（快取更新後呼叫）
+  rerender(){
+    const mode=(document.querySelector(".mchip.on")||{}).dataset?.v||"drive";
+    const refs=Refs.active();
+    const all=Store.listings();
+    // 取目前已顯示的 listings（從 DOM 讀取 id）
+    const shown=[...document.querySelectorAll(".card[data-id]")]
+      .map(el=>all.find(l=>l.id==el.dataset.id)).filter(Boolean);
+    if(shown.length) UI.renderCards(shown, refs, mode);
+    MapMod.renderListings(shown, refs, mode);
   },
   onCardClick(id){UI.highlightCard(id);MapMod.flyOpen(id);if(window.innerWidth<=768)switchTab("map");},
+  // Mobile: called from popup "查看詳情" button — switch to list and highlight
+  goToCard(id){
+    switchTab("list");
+    setTimeout(()=>UI.highlightCard(id), 200); // wait for tab transition
+  },
   confirmDelete(id){document.querySelectorAll(".del-confirm.show").forEach(el=>el.classList.remove("show"));document.getElementById("delconfirm-"+id)?.classList.add("show");},
   cancelDelete(id){document.getElementById("delconfirm-"+id)?.classList.remove("show");},
   doDelete(id){Store.saveLst(Store.listings().filter(l=>l.id!==id));this.filter();}
@@ -1470,7 +1779,7 @@ function switchTab(tab){
 }
 
 window.addEventListener("DOMContentLoaded",()=>{
-  initDistrictGrid();
+  initDistrictFilter();
   MapMod.init();
   Refs.init();
   MapMod.renderRefs(Refs.active());
