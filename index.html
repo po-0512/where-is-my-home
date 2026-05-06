@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>租了啦</title>
+<title>租屋查找器</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -671,7 +671,7 @@ html,body { height:100%; overflow:hidden; background:var(--bg); color:var(--t1);
 <!-- ── MOBILE HEADER ── -->
 <div class="mob-header">
   <div class="mob-row1">
-    <div class="mob-logo">租了啦<em> ◦ </em></div>
+    <div class="mob-logo">租屋查找器<em> ◦ </em></div>
     <div class="mob-search">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <input id="mobSearch" placeholder="搜尋..." oninput="App.filter()">
@@ -1114,13 +1114,27 @@ async function geocodeAddr(addr){
     clearTimeout(tid);
     if(res.ok){
       const d=await res.json();
+      console.log("[Geocode] Google status:", d.status, "for:", clean);
       if(d.status==="OK"&&d.results[0]){
         const r=d.results[0];
+        console.log("[Geocode] Google OK:", r.formatted_address);
         return{lat:r.geometry.location.lat, lng:r.geometry.location.lng,
                display:r.formatted_address, approximate:false};
+      } else {
+        // 常見失敗原因記錄
+        if(d.status==="REQUEST_DENIED")
+          console.error("[Geocode] ❌ REQUEST_DENIED — 請確認 Google Cloud Console 已啟用 Geocoding API，且域名限制設定正確");
+        else if(d.status==="OVER_DAILY_LIMIT")
+          console.error("[Geocode] ❌ OVER_DAILY_LIMIT — 已超過每日免費額度");
+        else if(d.status==="ZERO_RESULTS")
+          console.warn("[Geocode] ZERO_RESULTS — Google 找不到此地址:", clean);
+        else
+          console.warn("[Geocode] Google failed with status:", d.status);
       }
+    } else {
+      console.warn("[Geocode] Google HTTP error:", res.status);
     }
-  }catch(e){console.warn("Google geocode:",e.message);}
+  }catch(e){console.warn("[Geocode] Google fetch error:",e.message);}
 
   // ── Nominatim 備援（GitHub Pages 可用，本機 file:// 不可用）────────────
   const wait=Math.max(0,1100-(Date.now()-_nominatimLast));
@@ -1581,15 +1595,20 @@ const Modal={
     const result=await geocodeAddr(addr);
     if(result){
       this._vLat=result.lat;this._vLng=result.lng;this._vAddr=addr;
-      hint.className=result.approximate?"f-addr-hint warn":"f-addr-hint ok";
       hint.style.display="flex";
-      hint.innerHTML=(result.approximate?"⚠ 行政區近似：":"✓ 精確定位：")+result.display;
+      if(result.approximate){
+        hint.className="f-addr-hint warn";
+        hint.innerHTML="⚠ Google API 未返回精確位置，使用行政區近似座標：<b>"+result.display+"</b><br><small>請至 Google Cloud Console 確認 Geocoding API 已啟用</small>";
+      } else {
+        hint.className="f-addr-hint ok";
+        hint.innerHTML="✓ 精確定位："+result.display;
+      }
       btn.className="btn-verify-addr ok";
       btn.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> 已定位';
     } else {
       this._vLat=null;
       hint.className="f-addr-hint warn";hint.style.display="flex";
-      hint.innerHTML="⚠ 找不到地址，建議格式：<b>台中市北區育德路2號</b>";
+      hint.innerHTML="⚠ Google 定位失敗（請確認已啟用 Geocoding API）。建議格式：<b>台中市北區育德路2號</b>";
       btn.className="btn-verify-addr";btn.innerHTML="重試定位";
     }
     btn.disabled=false;
@@ -1705,11 +1724,12 @@ const App={
     const all=Store.listings();
     let res=[...all];
     if(q) res=res.filter(l=>(l.name+l.address+(l.note||"")).toLowerCase().includes(q));
-    // 地區篩選
+    // 地區篩選（normalize 臺→台 避免字形不符）
+    const normAddr=a=>(a||"").replace(/臺/g,"台");
     if(selectedDistricts.size>0)
-      res=res.filter(l=>[...selectedDistricts].some(d=>(l.address||"").includes(d)));
+      res=res.filter(l=>[...selectedDistricts].some(d=>normAddr(l.address).includes(d)));
     else if(selectedCity)
-      res=res.filter(l=>(l.address||"").includes(selectedCity));
+      res=res.filter(l=>normAddr(l.address).includes(selectedCity));
     if(type!=="all") res=res.filter(l=>l.type===type);
     if(pMin) res=res.filter(l=>l.price&&Number(l.price)>=pMin);
     if(pMax<Infinity) res=res.filter(l=>l.price&&Number(l.price)<=pMax);
