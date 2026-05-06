@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>租屋查找器</title>
+<title>租了啦</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -671,7 +671,7 @@ html,body { height:100%; overflow:hidden; background:var(--bg); color:var(--t1);
 <!-- ── MOBILE HEADER ── -->
 <div class="mob-header">
   <div class="mob-row1">
-    <div class="mob-logo">租屋查找器<em> ◦ </em></div>
+    <div class="mob-logo">租了啦<em> ◦ </em></div>
     <div class="mob-search">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <input id="mobSearch" placeholder="搜尋..." oninput="App.filter()">
@@ -961,18 +961,13 @@ html,body { height:100%; overflow:hidden; background:var(--bg); color:var(--t1);
 <!-- DISCLAIMER MODAL -->
 <div class="disc-bg" id="disclaimerModal">
   <div class="disc-box">
-    <div class="disc-title">⚠️ 使用說明與免責聲明</div>
+    <div class="disc-title">⚠️ 免責聲明</div>
     <div class="disc-body">
-      <b>本工具為個人租屋資訊整理輔助工具，請注意以下事項：</b>
-      <ul>
-        <li><b>地圖標記位置</b>：透過 Google Maps 定位，精確度取決於地址格式是否完整。</li>
-        <li><b>距離計算</b>：由 Google Distance Matrix API 計算實際路線距離，<b>非直線距離</b>。首次載入可能顯示「估算」，約數秒後更新為精確值。</li>
-        <li><b>通勤時間</b>：顯示「離峰–尖峰」區間。🚗開車 / 🛵機車 依 Google 路線計算；機車時間為開車時間 × 0.87（台灣機車通常較快）。實際時間因路況、天氣等因素而異。</li>
-        <li><b>房源資料</b>：均為使用者手動輸入，本工具不保證資料的正確性與即時性，請以實際看房確認為準。</li>
-      </ul>
+      距離與通勤時間由 Google Maps 計算，顯示<b>離峰–尖峰區間</b>，實際依路況而異。<br>
+      房源資料為使用者自行輸入，請以實際看房確認為準。
     </div>
     <div class="disc-foot">
-      <button class="btn-disc-ok" onclick="closeDisclaimer()">我了解，開始使用</button>
+      <button class="btn-disc-ok" onclick="closeDisclaimer()">了解，開始使用</button>
     </div>
   </div>
 </div>
@@ -1600,60 +1595,96 @@ const Modal={
     btn.disabled=false;
   },
   async save(){
+    // ── Validate required fields ─────────────────────────────────────────
     const name=document.getElementById("fName").value.trim();
     const addr=document.getElementById("fAddr").value.trim();
-    let ok=true;
-    if(!name){document.getElementById("fName").classList.add("err");document.getElementById("fNameErr").classList.add("on");ok=false;}
-    else{document.getElementById("fName").classList.remove("err");document.getElementById("fNameErr").classList.remove("on");}
-    if(!addr){document.getElementById("fAddr").classList.add("err");document.getElementById("fAddrErr").classList.add("on");ok=false;}
-    else{document.getElementById("fAddr").classList.remove("err");document.getElementById("fAddrErr").classList.remove("on");}
-    if(!ok) return;
-    const btn=document.getElementById("btnSave");
-    btn.textContent="儲存中...";btn.disabled=true;
-    let lat=null,lng=null;
-    try{
-      const ex=this._id?Store.listings().find(l=>l.id===this._id):null;
-      if(this._vAddr===addr&&this._vLat){lat=this._vLat;lng=this._vLng;}
-      else if(ex&&ex.address===addr&&ex.lat){lat=ex.lat;lng=ex.lng;}
-      else{
-        const r=await Promise.race([geocodeAddr(addr),new Promise(res=>setTimeout(()=>res(null),6000))]);
-        if(r){lat=r.lat;lng=r.lng;}
-      }
-    }catch(e){console.warn("Geocode in save:",e);}
-    const obj={
-      id:this._id||Date.now(), name, address:addr, lat, lng,
-      price:document.getElementById("fPrice").value||null,
-      type:document.getElementById("fType").value||null,
-      area:document.getElementById("fArea").value||null,
-      floor:document.getElementById("fFloor").value||null,
-      elec:document.getElementById("fElec").value||null,
-      water:document.getElementById("fWater").value||null,
-      waterAmt:document.getElementById("fWaterAmt").value||null,
-      mgmt:document.getElementById("fMgmt").value||null,
-      subsidy:document.getElementById("fSubsidy").checked,
-      agent:document.getElementById("fAgent").checked,
-      parking:document.getElementById("fParking").checked,
-      pet:document.getElementById("fPet").checked,
-      license:document.getElementById("fLicense").value.trim()||null,
-      contact:document.getElementById("fContact").value.trim()||null,
-      source:document.getElementById("fSource").value,
-      link:document.getElementById("fLink").value.trim()||null,
-      note:document.getElementById("fNote").value.trim()||null,
-      images:ImgUpload.get(),
-      createdAt:(this._id?Store.listings().find(l=>l.id===this._id)?.createdAt:null)||Date.now(),
-    };
-    try{
-      let all=Store.listings();
-      all=this._id?all.map(l=>l.id===this._id?obj:l):[obj,...all];
-      Store.saveLst(all);
-    }catch(e){
-      alert("儲存失敗：可能是圖片過大超過瀏覽器限制，請嘗試不上傳圖片或縮小圖片後再試。");
-    }finally{
-      btn.textContent="儲存房源";btn.disabled=false;
+    let valid=true;
+    if(!name){
+      document.getElementById("fName").classList.add("err");
+      document.getElementById("fNameErr").classList.add("on");
+      valid=false;
+    } else {
+      document.getElementById("fName").classList.remove("err");
+      document.getElementById("fNameErr").classList.remove("on");
     }
-    this.close();App.filter();
-  }
-};
+    if(!addr){
+      document.getElementById("fAddr").classList.add("err");
+      document.getElementById("fAddrErr").classList.add("on");
+      valid=false;
+    } else {
+      document.getElementById("fAddr").classList.remove("err");
+      document.getElementById("fAddrErr").classList.remove("on");
+    }
+    if(!valid) return;
+
+    // ── Lock button ───────────────────────────────────────────────────────
+    const btn=document.getElementById("btnSave");
+    btn.textContent="儲存中..."; btn.disabled=true;
+
+    try {
+      // ── Resolve coordinates ────────────────────────────────────────────
+      let lat=null, lng=null;
+      const ex=this._id ? Store.listings().find(l=>l.id===this._id) : null;
+      if(this._vAddr===addr && this._vLat!=null){
+        // Already verified by user pressing 定位
+        lat=this._vLat; lng=this._vLng;
+      } else if(ex && ex.address===addr && ex.lat!=null){
+        // Same address as existing record
+        lat=ex.lat; lng=ex.lng;
+      } else {
+        // Try geocoding with hard 5s timeout — save continues even if it fails
+        try {
+          const r=await Promise.race([
+            geocodeAddr(addr),
+            new Promise(res=>setTimeout(()=>res(null),5000))
+          ]);
+          if(r){ lat=r.lat; lng=r.lng; }
+        } catch(e){ console.warn("Geocode skipped:", e.message); }
+      }
+
+      // ── Build object ───────────────────────────────────────────────────
+      const obj={
+        id: this._id||Date.now(),
+        name, address:addr, lat, lng,
+        price:  document.getElementById("fPrice").value||null,
+        type:   document.getElementById("fType").value||null,
+        area:   document.getElementById("fArea").value||null,
+        floor:  document.getElementById("fFloor").value||null,
+        elec:   document.getElementById("fElec").value||null,
+        water:  document.getElementById("fWater").value||null,
+        waterAmt: document.getElementById("fWaterAmt").value||null,
+        mgmt:   document.getElementById("fMgmt").value||null,
+        subsidy: document.getElementById("fSubsidy").checked,
+        agent:   document.getElementById("fAgent").checked,
+        parking: document.getElementById("fParking").checked,
+        pet:     document.getElementById("fPet").checked,
+        license: document.getElementById("fLicense").value.trim()||null,
+        contact: document.getElementById("fContact").value.trim()||null,
+        source:  document.getElementById("fSource").value,
+        link:    document.getElementById("fLink").value.trim()||null,
+        note:    document.getElementById("fNote").value.trim()||null,
+        images:  ImgUpload.get(),
+        createdAt: ex?.createdAt||Date.now(),
+      };
+
+      // ── Write to localStorage ──────────────────────────────────────────
+      let all=Store.listings();
+      all=this._id ? all.map(l=>l.id===this._id?obj:l) : [obj,...all];
+      Store.saveLst(all);
+
+    } catch(e) {
+      console.error("Save failed:", e);
+      if(e.name==="QuotaExceededError")
+        alert("儲存空間已滿，請刪除部分圖片後再試。");
+      else
+        alert("儲存失敗："+e.message);
+    } finally {
+      // ── ALWAYS reset button, close modal, refresh list ─────────────────
+      btn.textContent="儲存房源"; btn.disabled=false;
+      this.close();
+      try{ App.filter(); }catch(e){ console.warn("filter error:", e); }
+    }
+  }};
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    APP  — filter, sort, orchestrate
